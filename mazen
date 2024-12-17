@@ -1,0 +1,3100 @@
+#!/bin/csh -f
+
+setenv RED_TBX_ENABLE_COMOD_INIT 1 
+
+setenv RED_DISABLE_TIMING_VIOLATION_CHECK 1
+
+setenv RED_DISABLE_OS_CHECK 1
+
+setenv WRT_FIX_TBX 1
+
+setenv DISABLE_WRT_RUNTIME_SKIP_TESTS_ON_START 1
+
+setenv ENABLE_EXTRACT_LINES_FAIL 1
+
+set script_loc=`dirname $0`  
+
+set script_loc=`cd $script_loc && pwd` 
+
+unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+setenv PATH  ${PATH}:/zin/tools/bin
+
+#setenv PATH /u/prod/mtiperl/bin:$PATH
+
+setenv ENABLE_HIJACK 1
+
+setenv BOARD_RESERVE_TIMEOUT 12
+
+set host=`hostname`
+
+set host_machine=`hostname`
+
+set LOCAL_TIMEOUT="300"
+
+set GLOBAL_TIMEOUT="2700"
+
+set GLOBAL_TIMEOUT_tbx="2700"
+
+set redrun_log_name="redrun"
+
+set host_full=$host
+
+set orig_dir_path=".."
+
+set pcie_usage=""
+
+set regress_type=$1
+
+set second_codeline=$2
+
+set board_name=$3
+
+set regress_type_tag=""
+
+set tbx_tag=""
+
+set regress_type_list=""
+
+set regress_machine_list=""
+
+set exclude_list=""
+
+set regress_run_not_pass=""
+
+set certus_list=""
+
+set profpga=""
+
+set date_of_run = (`date`)
+
+set ENABLE_REDJOB="-use_redjob wv -j 20 -local_timeout 2000" 
+
+set PARALLEL_certus_hardware=""
+
+if ($regress_type == "daily") then
+
+  set regress_type_tag=",-wv_weekly" 
+
+endif
+
+echo "regress_type tag is $regress_type_tag"
+
+echo `date`
+
+
+
+set CODELINES = (main 2024x 202306x)
+
+if ($second_codeline != "") then
+
+  set CODELINES = ($second_codeline)
+
+endif
+
+
+
+foreach codeline ($CODELINES)
+
+  if ($regress_type == "weekly") then
+
+    touch /bata/redeng/bnr/regular_runs/daily.regression/$codeline/regress.latest/weekly
+
+  endif
+
+end
+
+
+
+if ($host == "orw-redrhel89") then
+
+  set host="rhyolite-host";
+
+  set host_machine="rhyolite-host";
+
+  set host_full="rhyolite-host";
+
+endif
+
+
+
+
+
+set b10_systems = {"luna-host","obsidian-host","bachelor-host","hood-host","jefferson-host","nsister-host","ssister-host","mazama-host","newberry-host","brokentop-host","washington-host","tfjack-host","rhyolite-host","caramel-host","starswirl-host","meadowbrook-host","shasta-host","lassen-host"}
+
+set profpga_cs_systems = {"lost-comodel"}
+
+
+
+if ($host == "caramel-host") then
+
+#  setenv B10RUN_SKIP_FMREV_CHECK 1
+
+#full chassis reservation
+
+  unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+  setenv REDRESERVE_HOST cas-redsched-vm:56024
+
+  set ENABLE_REDJOB="-use_redjob fremont -j 20 -local_timeout 2000"
+
+  redreserve -full $host -start 30m -timeout 2h -comment "VPS nightly regression"
+
+  sleep 1800
+
+  unsetenv REDRESERVE_HOST
+
+endif
+
+if ($host == "tfjack-host") then
+
+  unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+  setenv REDRESERVE_HOST orw-redsched-vm:56025
+
+  /u/redeng/scripts/regress/clean_b10.pl
+
+ set hw_util_check = `perl /u/redeng/scripts/check_hw_util.pl -host tfjack-host`
+
+  if ( $hw_util_check == 1 ) then 
+
+    /u/redeng/scripts/reserve_primo.sh -b tfjack-host -s 30m -t 10h -c "VPS nightly regression" -m hijack
+
+    sleep 1800
+
+    unsetenv REDRESERVE_HOST
+
+  set certus_list="-list tests.list.primo_vu19p"
+
+  else
+
+     echo "ERROR: FAIL TO RESERVE (OUT OF REGRESSION SLOT)"
+
+     exit 
+
+  endif
+
+
+
+endif
+
+if ( $host == "brokentop-host") then 
+
+  unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+  setenv REDRESERVE_HOST orw-redsched-vm:56025
+
+  set hw_util_check = `perl /u/redeng/scripts/check_hw_util.pl -host brokentop-host`
+
+  if ( $hw_util_check == 1 ) then 
+
+    /u/redeng/scripts/reserve_primo.sh -b brokentop-host -s 30m -t 3h -c "VPS nightly regression" -m hijack
+
+    sleep 1800 
+
+    unsetenv REDRESERVE_HOST
+
+  else
+
+     echo "ERROR: FAIL TO RESERVE (OUT OF REGRESSION SLOT)"
+
+     exit 
+
+  endif
+
+
+
+endif
+
+if ( $host == "washington-host") then 
+
+  unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+  setenv REDRESERVE_HOST orw-redsched-vm:56025
+
+ set hw_util_check = `perl /u/redeng/scripts/check_hw_util.pl -host washington-host`
+
+  if ( $hw_util_check == 1 ) then 
+
+    /u/redeng/scripts/reserve_primo.sh -b washington-host -s 30m -t 3h -c "VPS nightly regression" -m hijack
+
+    sleep 1800 
+
+    unsetenv REDRESERVE_HOST
+
+  else 
+
+     echo "ERROR: FAIL TO RESERVE (OUT OF REGRESSION SLOT)"
+
+     exit 
+
+  endif
+
+
+
+endif
+
+
+
+if ($host == "rhyolite-host") then
+
+  unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+  setenv REDRESERVE_HOST orw-redsched-vm:56026
+
+  /u/redeng/scripts/reserve_primo.sh -b $host -s 30m -t 3h -c "VPS nightly regression" 
+
+  set ENABLE_REDJOB="-use_redjob wv_rhyolite -j 8 -local_timeout 2000"
+
+  unsetenv REDRESERVE_HOST
+
+endif
+
+
+
+if ($host == "hood-host") then
+
+  unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+  setenv REDRESERVE_HOST orw-redsched-vm:56025
+
+  set hw_util_check = `perl /u/redeng/scripts/check_hw_util.pl -host hood-host`
+
+  if ( $hw_util_check == 1 ) then
+
+    /u/redeng/scripts/reserve_primo.sh -b $host -s 30m -t 4h -c "VPS nightly regression" -m hijack
+
+    sleep 1800
+
+    unsetenv REDRESERVE_HOST
+
+  set certus_list="-list tests.list.primo_vu440"
+
+  else 
+
+     echo "ERROR: FAIL TO RESERVE (OUT OF REGRESSION SLOT)"
+
+     exit
+
+  endif
+
+endif
+
+
+
+if ($host == "lost-comodel") then
+
+  unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+  setenv REDRESERVE_HOST orw-redsched-vm.wv.mentorg.com:56027
+
+  /u/redeng/scripts/reserve_primo.sh -b $host -s 30m -t 4h -c "VPS nightly regression" -m hijack
+
+  unsetenv REDRESERVE_HOST
+
+ ## SE : check HW status before running
+
+  unset echo
+
+  set output = `ssh $host "cat /run/jshw_fpgas.txt" `
+
+  set count = `ssh $host "cat /run/jshw_fpgas.txt | grep -cE 'FPGA\s+Absent\s+256MB' "`
+
+  if ($count == 6) then
+
+    echo "Check passed: The HW_status is in good state."
+
+  else
+
+    echo "Error: The file does not contain exactly 6 instances of FPGA.*Absent.*256MB. It seems that the HW needs to be rebooted correctly."
+
+    echo "Output: $output"
+
+    echo "Error: The file does not contain exactly 6 instances of FPGA.*Absent.*256MB. It seems that the HW of lost-comodel needs to be rebooted correctly.\n $output" | mail -s "HW_status Check Failed" red22_qa.disw@siemens.com
+
+    exit 1
+
+  endif
+
+  set echo 
+
+#  redreserve -full lost-comodel -start 30m -timeout 4h -comment "VPS nightly regression"
+
+#  unsetenv REDRESERVE_HOST
+
+endif
+
+
+
+if ( -e "/home/redeng/NO_RUNTIME_$host") then 
+
+  echo "nightly runtime job on $host is disabled, exit ..."
+
+  exit
+
+endif
+
+
+
+if ($host == "detroit-comodel") then
+
+  set host="newberry-host"
+
+  set host_full="newberry-host"
+
+endif
+
+
+
+if ($host == "hood-host") then
+
+  set host="hood-host"
+
+  set host_full="hood-host"
+
+  set regress_machine_list="-machinelist machine_list_file -ssh"
+
+endif
+
+if ($host == "lost-comodel") then
+
+  set host="lost-comodel"
+
+  set host_full="lost-comodel"
+
+  set pcie_usage=""
+
+  set regress_machine_list=""
+
+  set certus_list="-list tests.list.skywalker_wv"
+
+endif
+
+
+
+if ($host == "redlab01") then
+
+  set host="profpga1";
+
+  set host_full="profpga1"
+
+  set profpga="profpga1"
+
+  set regress_machine_list="-machinelist machine_list_file"
+
+  set certus_list="-list tests.list.profpga_vu440"
+
+endif
+
+if ($host == "redlab02") then
+
+  set profpga="profpga2"
+
+  set regress_machine_list="-machinelist machine_list_file"
+
+endif
+
+if ($host == "redlab06") then
+
+  set host="profpga14";
+
+  set profpga="profpga14"
+
+  set host_full="profpga14"
+
+  set profpga="profpga14"
+
+  #set regress_machine_list="-machinelist machine_list_file"
+
+  set regress_machine_list=""
+
+endif
+
+if ($host == "redlab15") then
+
+  set host="profpga32_profpga33_MC";
+
+  set profpga="profpga33"
+
+  set host_full="profpga32_profpga33_MC"
+
+  set profpga="profpga33"
+
+  set regress_machine_list=""
+
+  set certus_list="-list tests.list.mc"
+
+endif
+
+if ($host == "redbuildsles124") then
+
+  set host="profpga17_profpga18_MC";
+
+  set profpga="profpga17"
+
+  set host_full="profpga17_profpga18_MC"
+
+  set profpga="profpga17"
+
+  set regress_machine_list=""
+
+endif
+
+if ($host == "redlab05") then
+
+  set host="profpga4";
+
+  set profpga="profpga4"
+
+  set host_full="profpga4"
+
+  set profpga="profpga4"
+
+#  set regress_machine_list="-machinelist machine_list_file"
+
+endif
+
+if ($host == "redlab12") then
+
+  set host="profpga12";
+
+  set profpga="profpga12"
+
+  set host_full="profpga12"
+
+  set profpga="profpga12"
+
+  set certus_list="-list tests.list.profpga_s10"
+
+  #set regress_machine_list="-machinelist machine_list_file -ssh"
+
+  set regress_machine_list=""
+
+  setenv RED_VIN_UTILS /u/red22/flexras/tools/ProFPGAVinLib/vin_2020D
+
+endif
+
+if ($host == "redlab10.wv.mentorg.com") then
+
+  set host="redlab10";
+
+  set host_full="redlab09";
+
+  set profpga="profpga9"
+
+  #set regress_machine_list="-machinelist machine_list_file"
+
+  rm -rf /dev/shm/cmdmem /dev/shm/sysmem
+
+  setenv LD_LIBRARY_PATH /home/aismail/libxcb/:$LD_LIBRARY_PATH
+
+endif
+
+if ($host == "redlab09") then
+
+  set host_full="redlab09";
+
+  set profpga="profpga9"
+
+  #set regress_machine_list="-machinelist machine_list_file"
+
+  rm -rf /dev/shm/cmdmem /dev/shm/sysmem
+
+endif
+
+
+
+if ($host == "hitlab4") then
+
+  set host="profpga3";
+
+  set profpga="profpga3"
+
+  set host_full="profpga3"
+
+  set pcie_usage="-auto_ref_cfg"
+
+  setenv BOARD_MACHINE profpga3
+
+  set regress_machine_list="-machinelist machine_list_file"
+
+endif
+
+
+
+if ($host == "redlab03") then
+
+  set host="profpga13"
+
+  set host_full="profpga13"
+
+  set profpga="profpga13"
+
+ # set regress_machine_list="-machinelist machine_list_file"
+
+endif
+
+#if ($host == "redlab08") then
+
+#  set host="profpga7"
+
+#  set host_full="profpga7"
+
+#  set profpga="profpga7"
+
+#  set regress_machine_list="-machinelist machine_list_file"
+
+#  set pcie_usage="-auto_ref_cfg -tcp"
+
+#  setenv BOARD_MACHINE profpga7
+
+#endif
+
+if ($host == "redlab23") then
+
+  set host="profpga8" 
+
+  set host_full="profpga8"
+
+  set profpga="profpga8"
+
+  #set regress_machine_list="-machinelist machine_list_file -ssh"
+
+  echo "the board will be $board_name"
+
+endif
+
+if ($host == "redlab16") then
+
+  set host="profpga6" 
+
+  set host_full="profpga6"
+
+  set profpga="profpga6"
+
+  set regress_machine_list="-machinelist machine_list_file -ssh"
+
+  echo "the board will be $board_name"
+
+ # setenv RED_ENABLE_WAIT_FOR_TBXRUN 1
+
+endif
+
+if ($host == "redlab08") then
+
+  set host="profpga16"
+
+  set host_full="profpga16"
+
+  set profpga="profpga16"
+
+  set regress_machine_list="-machinelist machine_list_file"
+
+  set pcie_usage=""
+
+  setenv BOARD_MACHINE profpga16
+
+  set LOCAL_TIMEOUT="600"
+
+endif
+
+if ($host == "redlab14") then
+
+  set host="profpga28";
+
+  set profpga="profpga28"
+
+  set host_full="profpga28"
+
+  set profpga="profpga28"
+
+  set certus_list="-list tests.list.profpga_vu19p"
+
+  #set regress_machine_list="-machinelist machine_list_file"
+
+  set regress_machine_list=""
+
+  set LOCAL_TIMEOUT="600"
+
+endif
+
+
+
+if ($host == "redlab24") then
+
+  set host="profpga24";
+
+  set profpga="profpga24"
+
+  set host_full="profpga24"
+
+  set profpga="profpga24"
+
+  #set regress_machine_list="-machinelist machine_list_file"
+
+  set regress_machine_list=""
+
+endif
+
+if ($host == "hitlab6") then
+
+  set host="profpga29";
+
+  set profpga="profpga29"
+
+  set host_full="profpga29"
+
+  set profpga="profpga29"
+
+  set pcie_usage="-auto_ref_cfg -tcp"
+
+  #set regress_machine_list="-machinelist machine_list_file"
+
+  set regress_machine_list=""
+
+endif
+
+if ($host == "redlab25") then
+
+  set host="profpga25";
+
+  set profpga="profpga25"
+
+  set host_full="profpga25"
+
+  set profpga="profpga25"
+
+  set pcie_usage="-auto_ref_cfg"
+
+  set regress_machine_list=""
+
+endif
+
+if ($host == "newberry-host") then
+
+  setenv DISPLAY redbuild02:2
+
+endif
+
+
+
+echo "start running on $host"
+
+echo $b10_systems | grep -q $host
+
+if ( $status != 0) then
+
+  $script_loc/actual_profpga_info.csh $profpga
+
+endif
+
+set unit_regress_base="/bata/redeng/bnr/regular_runs/daily.regression"
+
+set unit_regress_leaf="regress.latest/regress"
+
+set unit_regress_yesterday_leaf="regress.yesterday/regress"
+
+if ($host != "hitlab4") then
+
+# Run branches customer tests
+
+foreach codeline ($CODELINES)
+
+  foreach length (high medium low default)
+
+    foreach test_type (perf2_runtime perf2_certus_runtime)
+
+      setenv REGRESS /bata/redeng/$test_type/$codeline/$length
+
+      if (-e "$REGRESS/hw_cl" ) then
+
+        set cl=`cat $REGRESS/hw_cl`
+
+        if  (-e "$REGRESS/$cl/$host_full") then
+
+          echo "Run branches customer tests";
+
+          set build_date=`cat $REGRESS/hw_date`
+
+          setenv RED_HOME /u/red22/builds/nightly/$codeline/$build_date/vps_link
+
+          setenv REDMINIRUN_HOME /u/red22/builds/nightly/$codeline/$build_date/vps_redminirun_link
+
+          setenv PATH $RED_HOME/bin:$PATH
+
+          setenv RED_CODELINE $codeline
+
+          setenv RED_UTILS_HOME /u/red22/builds/nightly/$codeline/$build_date/vps_utils_link
+
+          unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+          setenv PATH $RED_UTILS_HOME/bin:$PATH
+
+          #setenv PATH /u/prod/mtiperl/bin:$PATH
+
+          cd $REGRESS/$cl
+
+          setenv DEMO_COMMENT "vps_regress: Customer design - $codeline $host_full"
+
+          if ($test_type == "perf2_certus_runtime") then
+
+            setenv RED_REGRESS /bata/redeng/bnr/Jenkins/red22-regress-$codeline/regress/
+
+          endif
+
+          if ($host_full == "luna-host" || $host_full == "obsidian-host" || $host_full == "mazama-host" ) then
+
+            /u/red22/tools/bin/reserve
+
+          endif
+
+          #echo $b10_systems | grep -q $host_full
+
+          #if ( $status == 0 ) then
+
+          #  $script_loc/clean_b10.pl
+
+          #endif
+
+          if ($host_full == "hood-host" ||  $host_full == "tfjack-host" || $host_full == "washington-host" || $host_full == "brokentop-host" || $host_full == "newberry-host" || $host_full == "ssister-host" || $host_full == "nsister-host" || $host_full == "jefferson-host" ) then
+
+            echo $host_full > machine_list_file
+
+            wrt -use_redjob wv -local_timeout 600 -run_opt "-skip_runtime_chmod $pcie_usage" -list $host_full -dump_env_stats -machinelist machine_list_file -ssh > $host_full.log
+
+          else if ($host_full == "profpga6") then
+
+            echo "redlab23" > machine_list_file
+
+            wrt -local_timeout 600 -run_opt "-skip_runtime_chmod $pcie_usage" -list $host_full -dump_env_stats -machinelist machine_list_file -ssh > $host_full.log
+
+          else
+
+            wrt -local_timeout 600 -run_opt "-skip_runtime_chmod $pcie_usage" -list $host_full -dump_env_stats   > $host_full.log
+
+          endif
+
+          if ($host_full == "luna-host" || $host_full == "obsidian-host" || $host_full == "mazama-host" ) then
+
+            /u/red22/tools/bin/release
+
+          endif
+
+          cat $host_full.log | grep -v "Total count" >> common.log
+
+          cat $host_full.log >> $host_full.all.log
+
+          cp common.log run_tests.SUM
+
+          /u/redeng/scripts/perf/make_summary.pl run_tests.SUM
+
+          touch new_results.txt
+
+          sleep 5
+
+          mv $REGRESS/$cl/$host_full $REGRESS/$cl/$host_full.old
+
+          /u/redeng/scripts/perf2/dump_runtime_status.pl -env dev -codeline $codeline -priority $length -changelist $cl -host $host_full
+
+          unsetenv RED_REGRESS
+
+        endif
+
+      endif
+
+    end
+
+  end
+
+end
+
+
+
+# Run release customer designs
+
+foreach rel_codeline ($CODELINES)
+
+  foreach length (high medium low default)
+
+    foreach test_type (perf2_runtime_rel perf2_certus_runtime_rel)
+
+      setenv REGRESS /bata/redeng/$test_type/$rel_codeline/$length/regress.latest
+
+      if (-e "$REGRESS/../hw_cl" ) then
+
+        set rel=`cat /u/redeng/releases/$rel_codeline`
+
+        set cl=`cat $REGRESS/../hw_cl`
+
+        if (-e "$REGRESS/../$cl/$host_full") then
+
+          echo "Run release customer tests";
+
+          setenv RED_HOME /u/red22/releases/$rel
+
+          setenv REDMINIRUN_HOME /u/red22/releases/vps_redminirun/$rel
+
+          setenv PATH $RED_HOME/bin:$PATH
+
+          setenv RED_CODELINE $rel_codeline
+
+          setenv RED_UTILS_HOME /u/red22/releases/utils/$rel
+
+          setenv PATH $RED_UTILS_HOME/bin:$PATH
+
+          unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+          #setenv PATH /u/prod/mtiperl/bin:$PATH
+
+          cd $REGRESS/../$cl/
+
+          setenv DEMO_COMMENT "vps_regress: Customer design - $rel release $host_full"
+
+          if ($test_type == "perf2_certus_runtime_rel") then
+
+            setenv RED_REGRESS /bata/redeng/bnr/Jenkins/red22-regress-$rel_codeline/regress/
+
+          endif
+
+          if ($host_full == "luna-host" || $host_full == "obsidian-host" || $host_full == "mazama-host" ) then
+
+            /u/red22/tools/bin/reserve
+
+          endif
+
+          #echo $b10_systems | grep -q $host_full
+
+          #if ( $status == 0 ) then
+
+          #  $script_loc/clean_b10.pl
+
+          #endif
+
+          if ($host_full == "hood-host" ||  $host_full == "tfjack-host" || $host_full == "washington-host" || $host_full == "brokentop-host" || $host_full == "newberry-host" || $host_full == "ssister-host" || $host_full == "nsister-host" || $host_full == "jefferson-host" ) then
+
+            echo $host_full > machine_list_file
+
+            wrt -use_redjob wv -local_timeout 600 -run_opt "-skip_runtime_chmod $pcie_usage" -list $host_full -dump_env_stats -machinelist machine_list_file -ssh > $host_full.log
+
+          else if ($host_full == "profpga6") then
+
+            echo "redlab23" > machine_list_file
+
+            wrt -local_timeout 600 -run_opt "-skip_runtime_chmod $pcie_usage" -list $host_full -dump_env_stats -machinelist machine_list_file -ssh > $host_full.log
+
+          else
+
+            wrt -local_timeout 600 -run_opt "-skip_runtime_chmod $pcie_usage" -list $host_full -dump_env_stats   > $host_full.log
+
+          endif
+
+          if ($host_full == "luna-host" || $host_full == "obsidian-host" || $host_full == "mazama-host" ) then
+
+            /u/red22/tools/bin/release
+
+          endif
+
+          cat $host_full.log | grep -v "Total count" >> common.log
+
+          cat $host_full.log >> $host_full.all.log
+
+          cp common.log run_tests.SUM
+
+          /u/redeng/scripts/perf/make_summary.pl run_tests.SUM
+
+          sleep 5
+
+          mv $host_full $host_full.old
+
+          /u/redeng/scripts/perf2/dump_runtime_status.pl -env rel -codeline $rel_codeline -priority $length -changelist $cl -host $host_full
+
+          unsetenv RED_REGRESS
+
+        endif
+
+      endif
+
+    end
+
+  end
+
+end
+
+endif
+
+# Run release unit tests
+
+set rel_run=0
+
+foreach rel_codeline ($CODELINES)
+
+   setenv REGRESS /bata/redeng/bnr/Jenkins/red22-rel-regress-$rel_codeline/regress
+
+   if (-e "$REGRESS/redrun.$host_full/to_run" || -e "$REGRESS/tbx.$host_full/to_run" || -e "$REGRESS/tbx.hpfe.$host_full/to_run" || -e "$REGRESS/redrun.ntb.$host_full/to_run" || -e "$REGRESS/IP.$host_full/to_run" || -e "$REGRESS/certus_hardware.$host_full/to_run" || -e "$REGRESS/redrun.$host_full.windows/to_run") then
+
+    set rel=`cat /u/redeng/releases/$rel_codeline`
+
+    setenv RED_HOME /u/red22/releases/$rel
+
+    setenv REDMINIRUN_HOME /u/red22/releases/vps_redminirun/$rel
+
+    setenv PATH $RED_HOME/bin:$PATH
+
+    setenv RED_CODELINE $rel_codeline
+
+    setenv RED_UTILS_HOME /u/red22/releases/utils/$rel
+
+    setenv PATH $RED_UTILS_HOME/bin:$PATH
+
+    unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+    #setenv PATH /u/prod/mtiperl/bin:$PATH
+
+    if ($rel_codeline != "202306x" && $rel_codeline != "202212x" && ($host == "luna-host" || $host == "tfjack-host" || $host == "rhyolite-host")) then
+
+      setenv LD_LIBRARY_PATH /home/aismail/libxcb:$LD_LIBRARY_PATH
+
+    endif
+
+    if ($host == "caramel-host") then
+
+      echo "Start preparing Fremont run area"
+
+      if (! -e "/sj/b10scratch/vps_regress_fremont/${rel_codeline}_rel") then
+
+        echo "/sj/b10scratch/vps_regress_fremont/${rel_codeline}_rel area not found";
+
+        exit 1;
+
+      endif
+
+      cd /sj/b10scratch/vps_regress_fremont/${rel_codeline}_rel
+
+      set cl_fr=`cat $RED_HOME/CHANGELIST | cut -d " " -f 2`
+
+      p4 sync regress/common/...@$cl_fr
+
+      p4 sync regress/scripts/...@$cl_fr
+
+      p4 sync regress/redrun/...@$cl_fr
+
+      p4 sync regress/tbx/unit_tests/...@$cl_fr
+
+      p4 sync regress/tbx/lcov_tbx.lst@$cl_fr
+
+      p4 sync regress/tbx/machine.lst@$cl_fr
+
+      p4 sync regress/tbx/tbx.vu19p_tests.list@$cl_fr
+
+      p4 sync regress/tbx/tests.list@$cl_fr
+
+      p4 sync regress/tbx/tests.list.luna-host@$cl_fr
+
+      p4 sync regress/tbx/tests.list.profpga13@$cl_fr
+
+      p4 sync regress/tbx/tests.list.profpga5@$cl_fr
+
+      p4 sync regress/tbx/tests.list.profpga6@$cl_fr
+
+      p4 sync regress/tests.list@$cl_fr
+
+      p4 sync regress/ddr3/...@$cl_fr
+
+      p4 sync regress/ddr4/...@$cl_fr
+
+      p4 sync regress/lpddr3/...@$cl_fr
+
+      p4 sync regress/lpddr4/...@$cl_fr
+
+      p4 sync regress/lpddr5/...@$cl_fr
+
+      p4 sync regress/snor/...@$cl_fr
+
+      p4 sync regress/strataflash/...@$cl_fr
+
+      p4 sync regress/bfm_scripts/...@$cl_fr
+
+    
+
+      #Clean old runs
+
+      set old_dir = `find -name "regress.yesterday.deletess.*" -type d -print -quit`
+
+      if ( $old_dir != "" ) then
+
+        echo "Old release run is not deleted correctly in Fremont, please check /sj/b10scratch/vps_regress_fremont/${rel_codeline}_rel/$old_dir" | mail -s "Delete old files" mazen.taha@siemens.com
+
+      endif
+
+      if (-e "regress.yesterday") then
+
+        mv regress.yesterday regress.yesterday.delete.$cl_fr
+
+        chmod 777 -R regress.yesterday.delete.$cl_fr
+
+        rm -rf regress.yesterday.delete.$cl_fr &
+
+      endif
+
+      if (-e "regress.latest") then
+
+           chmod 777 -R regress.latest
+
+           mv regress.latest regress.yesterday
+
+      endif
+
+    
+
+      mkdir -p regress.latest/regress
+
+      cp $RED_HOME/CHANGELIST regress.latest/regress/
+
+      cp $RED_HOME/versions regress.latest/regress/
+
+      (cd regress; gtar cf - .) | ( cd regress.latest/regress && gtar xfBp - )
+
+      touch regress.latest/regress/copy_done
+
+      cd regress.latest/regress/
+
+      cp -r tbx tbx.$host
+
+      cp -r redrun redrun.$host
+
+      echo "Done preparing Fremont run area"
+
+    endif
+
+   if ($host == "profpga1" || $host == "redlab09" || $host == "redlab10" ||$host == "profpga14" || $host == "profpga32_profpga33_MC" || $host == "profpga12" ||$host == "profpga13" ||  $host == "profpga4" || $host == "profpga5" || $host == "profpga6" || $host == "profpga7" ||  $host == "caramel-host" || $host == "luna-host" || $host == "hood-host" || $host == "mazama-host" || $host == "tfjack-host" || $host == "rhyolite-host" || $host == "profpga15" || $host == "profpga16" || $host == "profpga3" || $host == "profpga4" ||$host == "profpga24" ||$host == "profpga25" ||$host == "profpga28" ||$host == "profpga29" || $host == "profpga8" || $host == "newberry-host" || $host == "lost-comodel") then
+
+      if ((-e "$REGRESS/certus_hardware.$host_full/to_run")) then
+
+        mv $REGRESS/certus_hardware.$host_full/to_run $REGRESS/certus_hardware.$host_full/to_run.delete
+
+        set rel_run=1
+
+        set rel=`cat /u/redeng/releases/$rel_codeline`
+
+        cd $REGRESS/certus_hardware.$host_full
+
+        setenv DEMO_COMMENT "vps_regress: certus_hardware - $rel release $host"
+
+        echo "vps_regress: certus_hardware - $rel release"
+
+	setenv WRT_DISABLE_NO_CLOCK_WARNING 1
+
+        echo "################# $DEMO_COMMENT #################"
+
+        echo `date`
+
+        if (-e "run_tests_redrun.SUM") then
+
+           set regress_run_not_pass="-run_not_pass"
+
+         endif
+
+        set GLOBAL_TIMEOUT_certus_hardware="10800"
+
+        set LOCAL_TIMEOUT_certus_hardware="600"
+
+        if ($host == "profpga1") then
+
+          setenv CERTUS_PARALLEL_HW 1
+
+          set GLOBAL_TIMEOUT_certus_hardware="18000"
+
+          set LOCAL_TIMEOUT_certus_hardware="$GLOBAL_TIMEOUT_certus_hardware"
+
+          set PARALLEL_certus_hardware=" "
+
+          set host="profpga1_us"
+
+        endif
+
+        if ($host == "profpga12") then
+
+          setenv CERTUS_PARALLEL_HW 1
+
+          set GLOBAL_TIMEOUT_certus_hardware="10800"
+
+          set LOCAL_TIMEOUT_certus_hardware="$GLOBAL_TIMEOUT_certus_hardware"
+
+        endif
+
+       if ($host == "profpga28") then
+
+          setenv CERTUS_PARALLEL_HW 1
+
+          set GLOBAL_TIMEOUT_certus_hardware="12600"
+
+          set LOCAL_TIMEOUT_certus_hardware="$GLOBAL_TIMEOUT_certus_hardware"
+
+        endif
+
+        if ($host == "profpga32_profpga33_MC") then
+
+          setenv CERTUS_PARALLEL_HW 1
+
+          set GLOBAL_TIMEOUT_certus_hardware="7200"
+
+          set LOCAL_TIMEOUT_certus_hardware="$GLOBAL_TIMEOUT_certus_hardware"
+
+        endif
+
+        if ($host != "tfjack-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/reserve
+
+        endif
+
+          if ($host == "tfjack-host" || $host == "hood-host") then
+
+          wrt -local_timeout 3000 -redrun -log_name redrun -orig_dir_path $orig_dir_path/certus_hardware -board_machine $host -run_opt "-wait_for_license" -dump_env_stats  -timeout $GLOBAL_TIMEOUT_certus_hardware -use_redjob wv -j 8 $regress_run_not_pass $certus_list
+
+        else if ($host == "lost-comodel") then
+
+          wrt -local_timeout 400 -redrun -log_name redrun -orig_dir_path $orig_dir_path/certus_hardware -board_machine $host -run_opt "-wait_for_license" -dump_env_stats  -timeout $GLOBAL_TIMEOUT_certus_hardware -use_redreserve $regress_run_not_pass $certus_list
+
+        else 
+
+          wrt -local_timeout $LOCAL_TIMEOUT_certus_hardware -redrun -log_name redrun -orig_dir_path $orig_dir_path/certus_hardware -timeout $GLOBAL_TIMEOUT_certus_hardware -board_machine $host -run_opt "-wait_for_license" -dump_env_stats $regress_run_not_pass $PARALLEL_certus_hardware $certus_list
+
+        endif
+
+         if ($host != "tfjack-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+           /u/red22/tools/bin/release
+
+         endif
+
+         touch $REGRESS/certus_hardware.$host_full/hw_run_done
+
+         unsetenv CERTUS_PARALLEL_HW
+
+         set PARALLEL_certus_hardware=""
+
+         sleep 5
+
+      endif
+
+
+
+      if ((-e "$REGRESS/tbx.$host_full/to_run")) then
+
+        mv $REGRESS/tbx.$host_full/to_run $REGRESS/tbx.$host_full/to_run.delete
+
+        set rel_run=1
+
+        set rel=`cat /u/redeng/releases/$rel_codeline`
+
+        cd $REGRESS/tbx.$host_full
+
+        setenv DEMO_COMMENT "vps_regress: tbx - $rel release $host"
+
+        echo "vps_regress: tbx - $rel release"
+
+	setenv WRT_DISABLE_NO_CLOCK_WARNING 1
+
+        echo "################# $DEMO_COMMENT #################"
+
+        echo `date`
+
+        if (-e "run_tests_redrun.SUM") then
+
+           set regress_run_not_pass="-run_not_pass"
+
+         endif
+
+        set GLOBAL_TIMEOUT_tbx="28800"
+
+        if ($host == "redlab01" || $host == "redlab09" || $host == "redlab10" ) then
+
+          set GLOBAL_TIMEOUT_tbx="46800"
+
+          set exclude_list="-exclude unit_tests/xrtl_clked_oobc_new  -exclude unit_tests/xrtl_oneway_oobc -exclude unit_tests/clock_generation -exclude unit_tests/dpi_communication -exclude unit_tests/TBX_Clock_control -exclude unit_tests/StratoOS -exclude unit_tests/new_starto_features -exclude unit_tests/general_xrtl -exclude unit_tests/TBX_Clock_Prediction -exclude unit_tests/RED_PARAM_MEM -exclude unit_tests/runtime_force_release -exclude unit_tests/inactive_edge_opt"
+
+        endif
+
+        if ($host == "profpga29") then
+
+          set GLOBAL_TIMEOUT_tbx="21600"
+
+          set regress_list=""
+
+          set tbx_tag="-tag -single_fpga"
+
+        endif
+
+        if ($host == "profpga25") then
+
+          set GLOBAL_TIMEOUT_tbx="25200"
+
+          set regress_list=""
+
+          set tbx_tag="-tag single_fpga"
+
+        endif
+
+
+
+        if ($host == "profpga12") then
+
+          set GLOBAL_TIMEOUT_tbx="16200"
+
+          set tbx_tag="-tag -single_fpga"
+
+          set exclude_list="-exclude unit_tests/xrtl_clked_oobc_new  -exclude unit_tests/xrtl_oneway_oobc -exclude unit_tests/clock_generation -exclude unit_tests/dpi_communication -exclude unit_tests/TBX_Clock_control -exclude unit_tests/StratoOS -exclude unit_tests/new_starto_features -exclude unit_tests/general_xrtl -exclude unit_tests/TBX_Clock_Prediction -exclude unit_tests/RED_PARAM_MEM -exclude ./unit_tests/global_force -exclude ./unit_tests/inactive_edge_opt -exclude ./unit_tests/MDR"
+
+        endif
+
+
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/reserve
+
+        endif
+
+        if ($host == "luna-host" || $host == "obsidian-host" ||  $host == "caramel-host" || $host == "mazama-host") then
+
+          $script_loc/clean_b10.pl
+
+          setenv REGRESS_MODE 1 #use this mode as long as you are not running with redsched.
+
+          set regress_machine_list=""
+
+        endif
+
+       if ($host == "profpga4" || $host == "profpga15" || $host == "profpga16" || $host == "profpga5" || $host == "profpga6" || $host == "profpga13") then
+
+         set regress_type_list="-list tests.list.$host"
+
+       endif
+
+       if ($host == "profpga7") then
+
+         set regress_type_list="-list tests.list.profpga6"
+
+       endif
+
+       if ($host == "profpga8") then
+
+         set regress_type_list="-list tests.list.profpga8"
+
+       endif
+
+       if ($host == "profpga6") then
+
+          set GLOBAL_TIMEOUT_tbx="10800"
+
+       endif
+
+
+
+        echo "$host_machine" > machine_list_file
+
+        if ($host == "caramel-host") then
+
+          cd /sj/b10scratch/vps_regress_fremont/${rel_codeline}_rel/$unit_regress_leaf/tbx.caramel-host/
+
+          echo "$host_machine" > machine_list_file
+
+          scp $REGRESS/tbx.caramel-host/wrt.results.tgz .
+
+          if (-e "wrt.results.tgz") then
+
+            gtar xfz wrt.results.tgz
+
+            wrt -local_timeout 300 -redrun -log_name redrun -orig_dir_path $orig_dir_path/tbx -board_machine $host -tag -black10 -run_opt "-skip_runtime_chmod -wait_for_license" -dump_env_stats $regress_machine_list -timeout 21600 $exclude_list $regress_run_not_pass 
+
+            rsync -e ssh --stats -alogtr --port=8730 . redbuild02.wv.mentorg.com:$REGRESS/tbx.caramel-host --exclude=results --exclude=wrt.results.tgz --exclude=outputs --exclude=redcomp.out &
+
+          else
+
+            echo "File /sj/b10scratch/vps_regress_fremont/${rel_codeline}_rel/$unit_regress_leaf/tbx.caramel-host/wrt.results.tgz not found"
+
+          endif
+
+        else if ($host == "luna-host") then
+
+          wrt -local_timeout 300 -redrun -tag black10 -log_name redrun -orig_dir_path $orig_dir_path/tbx -board_machine $host -run_opt "-wait_for_license" -dump_env_stats $regress_machine_list -timeout 7200 $regress_run_not_pass
+
+        else if ($host == "mazama-host") then
+
+          wrt -local_timeout 300 -redrun -list tbx.vu19p_tests.list -log_name redrun -orig_dir_path $orig_dir_path/tbx -board_machine $host -run_opt "-wait_for_license" -dump_env_stats $regress_machine_list -timeout 7200 $regress_run_not_pass
+
+        else if ($host == "lost-comodel") then
+
+          wrt -local_timeout 300 -redrun -use_redreserve -log_name redrun -orig_dir_path $orig_dir_path/tbx -board_machine $host -run_opt "-skip_board_reservation -wait_for_license" -dump_env_stats $regress_machine_list -timeout 72000 $regress_run_not_pass $certus_list
+
+        else if ($host == "rhyolite-host") then
+
+          setenv REDJOB_USE_HOST_ONLY 1
+
+          set ENABLE_REDJOB="-local_timeout 3000 -redrun -use_redjob wv_rhyolite  -j 8"
+
+          wrt $ENABLE_REDJOB -redrun -log_name redrun -orig_dir_path $orig_dir_path/tbx -board_machine $host -run_opt "-wait_for_license" -dump_env_stats $regress_machine_list -timeout 28800 $regress_run_not_pass
+
+        else 
+
+          wrt -local_timeout 300 -redrun -log_name redrun -orig_dir_path $orig_dir_path/tbx -timeout $GLOBAL_TIMEOUT_tbx -board_machine $host -run_opt "$pcie_usage -wait_for_license" $regress_type_list -dump_env_stats $regress_machine_list $exclude_list $regress_run_not_pass $tbx_tag
+
+        endif
+
+         if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+           /u/red22/tools/bin/release
+
+         endif
+
+         if ($host_full == "redlab09" && -e "$REGRESS/tbx.profpga9/run_tests_redrun.SUM") then
+
+           cat $REGRESS/tbx.profpga9/run_tests_redrun.SUM >> run_tests_redrun.SUM
+
+         endif
+
+         touch $REGRESS/tbx.$host_full/hw_run_done
+
+         sleep 5
+
+      endif
+
+    endif
+
+    if (-e "$REGRESS/redrun.$host_full/to_run") then
+
+      mv $REGRESS/redrun.$host_full/to_run $REGRESS/redrun.$host_full/to_run.delete
+
+      set rel_run=1
+
+      set rel=`cat /u/redeng/releases/$rel_codeline`
+
+      setenv RED_HOME /u/red22/releases/$rel
+
+      setenv REDMINIRUN_HOME /u/red22/releases/vps_redminirun/$rel
+
+      setenv PATH $RED_HOME/bin:$PATH
+
+      setenv RED_UTILS_HOME /u/red22/releases/utils/$rel
+
+      setenv PATH $RED_UTILS_HOME/bin:$PATH
+
+      cd $REGRESS/redrun.$host_full
+
+      if ($host == "profpga14" ) then
+
+        wrt -redrun -board_machine $host  -exclude RED_PARAM_MEM -exclude softmodel -exclude S10_P2 -exclude quartus  -exclude user_interface -exclude user_interrupt  -n > tests.list.$host
+
+	set GLOBAL_TIMEOUT="32400"
+
+      endif
+
+      if ($host == "profpga3") then
+
+	set GLOBAL_TIMEOUT="1800"
+
+        set redrun_log_name="redrun_wv"
+
+      endif
+
+      if ($host == "redlab09" || $host == "redlab10" ) then
+
+	set GLOBAL_TIMEOUT="1800"
+
+	cp tests.list.redlab09 tests.list.redlab10
+
+      endif
+
+      if ($host == "profpga7") then
+
+        cp tests.list.profpga6 tests.list.profpga7
+
+      endif
+
+      if ($host == "profpga4") then
+
+	set GLOBAL_TIMEOUT="18000"
+
+      endif
+
+      if ($host == "profpga29" ) then
+
+        set GLOBAL_TIMEOUT="14400"
+
+      endif
+
+      if ($host == "profpga13") then
+
+	set GLOBAL_TIMEOUT="9000"
+
+      endif
+
+         if (-e "run_tests_redrun.SUM") then
+
+           set regress_run_not_pass="-run_not_pass"
+
+         endif
+
+        setenv DEMO_COMMENT "vps_regress: redrun - $rel release $host"
+
+        echo "################# $DEMO_COMMENT #################"
+
+        echo `date`
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/reserve
+
+        endif
+
+        if ($host == "luna-host" || $host == "obsidian-host" || $host == "caramel-host" || $host == "hood-host") then
+
+          wrt -redrun -board_machine $host -n > tests.list.$host
+
+          $script_loc/clean_b10.pl
+
+          setenv REGRESS_MODE 1 #use this mode as long as you are not running with redsched.
+
+          set redrun_log_name="redrun"
+
+          set regress_machine_list=""
+
+        endif
+
+      if ($host == "redlab01") then
+
+	set redrun_log_name="redrun_wv"
+
+      endif
+
+       echo "$host_machine" > machine_list_file
+
+       if ($host == "hood-host") then
+
+         echo $host > machine_list_file
+
+         set regress_machine_list="-machinelist machine_list_file -ssh"
+
+       endif
+
+       if ($host == "caramel-host") then
+
+         cd /sj/b10scratch/vps_regress_fremont/${rel_codeline}_rel/$unit_regress_leaf/redrun.caramel-host/
+
+         echo "$host_machine" > machine_list_file
+
+         scp $REGRESS/redrun.caramel-host/wrt.results.tgz .
+
+         scp $REGRESS/redrun.$host/tests.list.$host .
+
+         if (-e "wrt.results.tgz") then
+
+           gtar xfz wrt.results.tgz
+
+           wrt -local_timeout 300 -redrun -log_name redrun -orig_dir_path $orig_dir_path/redrun -board_machine $host -tag -black10 -run_opt "-skip_runtime_chmod -wait_for_license" -dump_env_stats -timeout 21600
+
+           rsync -e ssh --stats -alogtr --port=8730 . redbuild02.wv.mentorg.com:$REGRESS/redrun.caramel-host --exclude=results --exclude=wrt.results.tgz --exclude=outputs --exclude=redcomp.out &
+
+         else
+
+           echo "File /sj/b10scratch/vps_regress_fremont/${rel_codeline}_rel/$unit_regress_leaf/redrun.caramel-host/wrt.results.tgz not found"
+
+         endif
+
+       else if ($host == "luna-host") then
+
+         wrt -local_timeout 300 -redrun -tag black10 -log_name redrun -orig_dir_path $orig_dir_path/redrun -board_machine $host -run_opt "-wait_for_license" -dump_env_stats -timeout 14400 $regress_run_not_pass
+
+       else if ($host == "mazama-host") then
+
+         wrt -local_timeout 300 -redrun  -log_name redrun -orig_dir_path $orig_dir_path/redrun -board_machine $host -run_opt "-wait_for_license" -dump_env_stats $regress_run_not_pass
+
+       else if ($host == "lost-comodel") then
+
+         wrt -local_timeout 300 -redrun -use_redreserve -log_name redrun -orig_dir_path $orig_dir_path/redrun -board_machine $host -run_opt "-skip_board_reservation -wait_for_license" -dump_env_stats $regress_run_not_pass $certus_list
+
+       else if ($host == "tfjack-host") then
+
+	 setenv LD_LIBRARY_PATH /home/aismail/libxcb/:$LD_LIBRARY_PATH
+
+         setenv REDJOB_USE_HOST_ONLY 1
+
+         set ENABLE_REDJOB="-local_timeout 1800 -redrun -use_redjob wv  -j 20"
+
+         wrt  $ENABLE_REDJOB -redrun -log_name $redrun_log_name -orig_dir_path $orig_dir_path/redrun -timeout 20000 -board_machine $host -run_opt "$pcie_usage -wait_for_license"  -dump_env_stats $regress_machine_list -exclude RED_PARAM_MEM -exclude softmodel -exclude user_interface -exclude user_interrupt -exclude virtual_uart -exclude SVA -exclude fcov -exclude upf -exclude RED_PARAM_DSP -exclude RED_PARAM_CAM -exclude certus -exclude runtime_force_release $regress_run_not_pass
+
+         #clean host between runs 
+
+         /u/redeng/scripts/regress/clean_b10.pl 
+
+         #### clean reservation after regression run
+
+         /u/redeng/scripts/reserve_primo.sh -b tfjack-host -m clean_after_regress -c "VPS release regression"
+
+       else
+
+         wrt -local_timeout $LOCAL_TIMEOUT  -redrun -log_name $redrun_log_name -orig_dir_path $orig_dir_path/redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -run_opt "$pcie_usage -wait_for_license" -list tests.list.$host -dump_env_stats $regress_machine_list $regress_run_not_pass
+
+       endif
+
+       if ($host != "caramel-host" && $host != "hood-host") then
+
+         /u/red22/tools/bin/release
+
+       endif
+
+       sleep 5
+
+       foreach wv_test (`cat tests.list.$host`)
+
+        if ($host == "redlab01" || $host == "profpga3") then
+
+           cp $wv_test/run_tests_$redrun_log_name.log $wv_test/run_tests_redrun.log
+
+        endif      
+
+       end
+
+    endif
+
+    if (-e "$REGRESS/IP.$host_full/to_run") then
+
+      mv $REGRESS/IP.$host_full/to_run $REGRESS/IP.$host_full/to_run.delete
+
+      set rel_run=1
+
+      set rel=`cat /u/redeng/releases/$rel_codeline`
+
+      setenv RED_HOME /u/red22/releases/$rel
+
+      setenv REDMINIRUN_HOME /u/red22/releases/vps_redminirun/$rel
+
+      setenv PATH $RED_HOME/bin:$PATH
+
+      setenv RED_UTILS_HOME /u/red22/releases/utils/$rel
+
+      setenv PATH $RED_UTILS_HOME/bin:$PATH
+
+      cd $REGRESS/IP.$host_full
+
+      set GLOBAL_TIMEOUT="32400"
+
+      set regress_run_not_pass=""
+
+         if (-e "run_tests_redrun.SUM") then
+
+           set regress_run_not_pass="-run_not_pass"
+
+         endif
+
+      setenv DEMO_COMMENT "vps_regress: IP - $rel release $host"
+
+        echo "################# $DEMO_COMMENT #################"
+
+        echo `date`
+
+        set ENABLE_REDJOB=""
+
+        if ($host == "brokentop-host" || $host == "washington-host") then
+
+           setenv LD_LIBRARY_PATH /home/aismail/libxcb/:$LD_LIBRARY_PATH
+
+	   set ENABLE_REDJOB="-local_timeout 1800 -redrun -use_redjob wv  -j 20"
+
+        endif
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/reserve
+
+        endif
+
+         wrt -local_timeout 300 -redrun -log_name redrun -orig_dir_path $orig_dir_path/redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -run_opt "$pcie_usage -wait_for_license" -dump_env_stats $ENABLE_REDJOB $regress_run_not_pass
+
+       if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+         /u/red22/tools/bin/release
+
+       endif
+
+       sleep 5
+
+    endif
+
+
+
+    if (-e "$REGRESS/tbx.hpfe.$host/to_run") then
+
+          mv $REGRESS/tbx.hpfe.$host/to_run $REGRESS/tbx.hpfe.$host/to_run.delete 
+
+          cd $REGRESS/tbx.hpfe.$host
+
+          set GLOBAL_TIMEOUT_tbx="3600"
+
+          setenv DEMO_COMMENT "vps_regress: tbx HPFE - $rel_codeline $host"
+
+          echo "################# $DEMO_COMMENT #################"
+
+          echo `date`
+
+          if ($host == "tfjack-host") then
+
+            echo "wallowa-comodel" > machine_list_file
+
+            set regress_machine_list="-machinelist machine_list_file -ssh"
+
+          endif
+
+	  if ($host == "newberry-host") then
+
+            setenv COMODEL_HOST -
+
+	  endif 
+
+	  if ($host == "hood-host") then
+
+	    /usr/local/hpfe/comodel/hpfe.sh -r 147.34.169.246
+
+	  endif 
+
+          wrt -local_timeout 300 -redrun -log_name redrun -orig_dir_path ../tbx/unit_tests -timeout $GLOBAL_TIMEOUT_tbx -board_machine $host -run_opt "$pcie_usage -wait_for_license" $regress_type_list -dump_env_stats $regress_machine_list
+
+            touch $REGRESS/hw_run_done
+
+            sleep 5
+
+        endif
+
+
+
+    if (-e "$REGRESS/redrun.ntb.$host/to_run") then
+
+      mv $REGRESS/redrun.ntb.$host/to_run $REGRESS/redrun.ntb.$host/to_run.delete
+
+      cd $REGRESS/redrun.ntb.$host
+
+      set GLOBAL_TIMEOUT="3600"
+
+      set redrun_log_name="redrun"
+
+      echo "$host_machine" > machine_list_file
+
+      setenv DEMO_COMMENT "vps_regress: redrun NTB - $rel_codeline $host"
+
+      echo "################# $DEMO_COMMENT #################"
+
+      echo `date`
+
+      if ($host == "tfjack-host") then 
+
+        echo "wallowa-comodel" > machine_list_file
+
+        wrt -local_timeout 300 -redrun -log_name $redrun_log_name -orig_dir_path ../redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -tag -no_$host -run_opt " -wait_for_license" -dump_env_stats -machinelist machine_list_file -ssh -use_results $REGRESS/redrun.tfjack-host/
+
+      else
+
+        wrt -local_timeout 300 -redrun -log_name $redrun_log_name -orig_dir_path ../redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -tag -no_$host -run_opt " -wait_for_license" -dump_env_stats -machinelist machine_list_file -ssh -use_results $REGRESS/redrun.luna-host/
+
+      endif
+
+        touch $REGRESS/hw_run_done
+
+        sleep 5
+
+    endif
+
+
+
+      if ((-e "$REGRESS/redrun.$host_full.windows/to_run")) then
+
+        mv $REGRESS/redrun.$host_full.windows/to_run $REGRESS/redrun.$host_full.windows/to_run.delete
+
+        set rel_run=1
+
+        set rel=`cat /u/redeng/releases/$rel_codeline`
+
+        cd $REGRESS/redrun.$host_full.windows
+
+        setenv rel_windows `echo $rel | sed 's/.candidate[[:digit:]]\+//' `
+
+        setenv RED_WINDOWS_HOME /u/red22/releases/windows/$rel/VPS-$rel_windows
+
+        setenv DEMO_COMMENT "vps_regress: redrun windows - $rel release $host"
+
+        echo "vps_regress: redrun windows - $rel release"
+
+	setenv WRT_DISABLE_NO_CLOCK_WARNING 1
+
+        echo "################# $DEMO_COMMENT #################"
+
+        echo `date`
+
+        if (-e "run_tests_redrun.SUM") then
+
+           set regress_run_not_pass="-run_not_pass"
+
+         endif
+
+        if ($host != "tfjack-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/reserve
+
+        endif
+
+        wrt -local_timeout 600 -redrun -log_name redrun_copy -timeout 7200 -list tests.list.$host_full.windows -board_machine $host -run_opt "-compile_copy_only" 
+
+        wrt -local_timeout 1000 -redrun -log_name redrun -orig_dir_path $orig_dir_path/redrun -timeout 10800 -win_grid -tcp -list tests.list.$host_full.windows -board_machine $host -run_opt "-wait_for_license -skip_compile_copy -end_checkpoint verify" -grid_opt "-tc 1"  $regress_run_not_pass 
+
+        wrt -local_timeout 300 -tag offline -log_name redrun -orig_dir_path $orig_dir_path/redrun -timeout 3600 -list tests.list.$host_full.windows -board_machine $host -run_opt "-wait_for_license -skip_compile_copy -start_checkpoint verify" $regress_run_not_pass
+
+        #rename last SUM log to preserve it before merging with windows run SUM 
+
+        mv run_tests_redrun.SUM run_tests_redrun_linux.SUM
+
+        #preserve windows run SUM copy
+
+        cp run_tests_redrun.SUM.temp run_tests_redrun.SUM
+
+        #merge both SUM logs 
+
+        (echo ""; cat run_tests_redrun_linux.SUM) >> run_tests_redrun.SUM
+
+        if ($host != "tfjack-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+           /u/red22/tools/bin/release
+
+         endif
+
+         touch $REGRESS/redrun.$host_full.windows/hw_run_done
+
+         sleep 5
+
+      endif
+
+
+
+
+
+
+
+   if ($profpga != "") then
+
+        /u/red22/tools/bin/reserve
+
+      /home/redeng/scripts/egc/cleanBrdLog $profpga
+
+      /u/red22/tools/bin/release
+
+    endif
+
+endif
+
+end
+
+
+
+if ($rel_run) then
+
+  echo "Will not run nightly regression today as release regression already run"
+
+  if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+    /u/redeng/bin/release
+
+  endif
+
+  exit 0
+
+endif
+
+# Run branches unit tests
+
+# Add semaphore to send only 1 email
+
+#if ($regress_type == "weekly" && $host == "redlab05") then
+
+#  set CODELINES = ($second_codeline)
+
+#endif
+
+foreach codeline ($CODELINES)
+
+  touch $unit_regress_base/$codeline/$unit_regress_leaf/hw_running.$host
+
+end
+
+@  no_of_runs = 0
+
+foreach codeline ($CODELINES)
+
+  setenv REGRESS $unit_regress_base/$codeline/$unit_regress_leaf
+
+  if (!(-e "$REGRESS/running_date")) then
+
+    echo "DEBUG file $REGRESS/running_date is no there, exiting \n" 
+
+    continue
+
+  endif 
+
+  set running_date=`cat $REGRESS/running_date`
+
+  setenv RED_HOME /u/red22/builds/nightly/$codeline/$running_date/vps_link
+
+  setenv REDMINIRUN_HOME /u/red22/builds/nightly/$codeline/$running_date/vps_redminirun_link
+
+  setenv RED_UTILS_HOME /u/red22/builds/nightly/$codeline/$running_date/vps_utils_link
+
+  setenv PATH $RED_HOME/bin:$PATH
+
+  setenv RED_CODELINE $codeline
+
+  setenv PATH $RED_UTILS_HOME/bin:$PATH
+
+  unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+  # enable run analysis report 
+
+  setenv WRT_RUN_ANALYSIS 1
+
+  #setenv PATH /u/prod/mtiperl/bin:$PATH
+
+  if (-e "$REGRESS/tbx.$host_full/to_run" || -e "$REGRESS/redrun.$host_full/to_run" || -e "$REGRESS/tbx.hpfe.$host_full/to_run" || -e "$REGRESS/redrun.ntb.$host_full/to_run" || -e "$REGRESS/IP.$host_full/to_run" || -e "$REGRESS/redrun.$host_full.windows/to_run" || -e "$REGRESS/certus_hardware.$host_full/to_run" ) then
+
+     @ no_of_runs += 1
+
+  endif
+
+    if ($codeline != "202306x" && $codeline != "202212x" && ($host == "luna-host" || $host == "tfjack-host" || $host == "rhyolite-host")) then
+
+      setenv LD_LIBRARY_PATH /home/aismail/libxcb:$LD_LIBRARY_PATH
+
+    endif
+
+
+
+  if (-e "/home/redeng/NIGHTLY_BUILD_1_BRANCH_ONLY") then
+
+    if ($no_of_runs > 1) then
+
+      echo "escape $codeline as we have 1 branch already run for this board and only one nightly run today"
+
+      continue
+
+    endif
+
+  endif
+
+  if ($no_of_runs > 2) then
+
+    echo "escape $codeline as we have 2 branchs  already run"
+
+    continue
+
+  endif
+
+  if ($host == "caramel-host") then
+
+    echo "Start preparing Fremont run area"
+
+    if (! -e "/sj/b10scratch/vps_regress_fremont/$codeline") then
+
+      echo "/sj/b10scratch/vps_regress_fremont/$codeline area not found";
+
+      exit 1;
+
+    endif
+
+    cd /sj/b10scratch/vps_regress_fremont/$codeline
+
+    set cl_fr=`cat $RED_HOME/CHANGELIST | cut -d " " -f 2`
+
+    p4 sync regress/common/...@$cl_fr
+
+    p4 sync regress/scripts/...@$cl_fr
+
+    p4 sync regress/redrun/...@$cl_fr
+
+    p4 sync regress/tbx/unit_tests/...@$cl_fr
+
+    p4 sync regress/tbx/lcov_tbx.lst@$cl_fr
+
+    p4 sync regress/tbx/machine.lst@$cl_fr
+
+    p4 sync regress/tbx/tbx.vu19p_tests.list@$cl_fr
+
+    p4 sync regress/tbx/tests.list@$cl_fr
+
+    p4 sync regress/tbx/tests.list.luna-host@$cl_fr
+
+    p4 sync regress/tbx/tests.list.profpga13@$cl_fr
+
+    p4 sync regress/tbx/tests.list.profpga5@$cl_fr
+
+    p4 sync regress/tbx/tests.list.profpga6@$cl_fr
+
+    p4 sync regress/tests.list@$cl_fr
+
+    p4 sync regress/ddr3/...@$cl_fr
+
+    p4 sync regress/ddr4/...@$cl_fr
+
+    p4 sync regress/lpddr3/...@$cl_fr
+
+    p4 sync regress/lpddr4/...@$cl_fr
+
+    p4 sync regress/lpddr5/...@$cl_fr
+
+    p4 sync regress/snor/...@$cl_fr
+
+    p4 sync regress/strataflash/...@$cl_fr
+
+    p4 sync regress/bfm_scripts/...@$cl_fr
+
+
+
+    #Clean old runs
+
+    set old_dir = `find -name "regress.yesterday.deletess.*" -type d -print -quit`
+
+    if ( $old_dir != "" ) then
+
+      echo "Old regress is not deleted correctly in Fremont, please check /sj/b10scratch/vps_regress_fremont/$codeline/$old_dir" | mail -s "Delete old files" mazen.taha@siemens.com
+
+    endif
+
+    if (-e "regress.yesterday") then
+
+      mv regress.yesterday regress.yesterday.delete.$cl_fr
+
+      chmod 777 -R regress.yesterday.delete.$cl_fr
+
+      rm -rf regress.yesterday.delete.$cl_fr &
+
+    endif
+
+    if (-e "regress.latest") then
+
+         chmod 777 -R regress.latest
+
+         mv regress.latest regress.yesterday
+
+         #ln -sf /sj/b10scratch/vps_regress_fremont/$codeline/$unit_regress_yesterday_leaf/tbx.caramel-host/ $unit_regress_base/$codeline/$unit_regress_yesterday_leaf/
+
+         #ln -sf /sj/b10scratch/vps_regress_fremont/$codeline/$unit_regress_yesterday_leaf/redrun.caramel-host/ $unit_regress_base/$codeline/$unit_regress_yesterday_leaf/
+
+         #ln -sf /sj/b10scratch/vps_regress_fremont/$codeline/$unit_regress_yesterday_leaf/redrun.starswirl-caramel-host/ $unit_regress_base/$codeline/$unit_regress_yesterday_leaf/
+
+    endif
+
+
+
+    mkdir -p regress.latest/regress
+
+    cp $RED_HOME/CHANGELIST regress.latest/regress/
+
+    cp $RED_HOME/versions regress.latest/regress/
+
+    (cd regress; gtar cf - .) | ( cd regress.latest/regress && gtar xfBp - )
+
+    touch regress.latest/regress/copy_done
+
+    cd regress.latest/regress/
+
+    cp -r tbx tbx.$host
+
+    cp -r redrun redrun.$host
+
+    echo "Done preparing Fremont run area"
+
+  endif
+
+
+
+    if ($host == "profpga1" || $host == "redlab09" || $host == "redlab10" || $host == "profpga14" ||$host == "profpga32_profpga33_MC" || $host == "profpga12" ||$host == "profpga13" || $host == "profpga4" || $host == "profpga5" ||$host == "profpga6" || $host == "profpga7" || $host == "luna-host" || $host == "obsidian-host" || $host == "caramel-host" || $host == "hood-host" || $host == "mazama-host" || $host == "tfjack-host" || $host == "rhyolite-host" || $host == "profpga15" || $host == "profpga16" || $host == "profpga3" || $host == "profpga4"  || $host == "profpga24" || $host == "profpga25" || $host == "profpga29" || $host == "profpga8" || $host == "profpga28" || $host == "newberry-host" || $host == "lost-comodel") then
+
+     if ((-e "$REGRESS/certus_hardware.$host_full/to_run")) then
+
+       mv $REGRESS/certus_hardware.$host_full/to_run $REGRESS/certus_hardware.$host_full/to_run.delete
+
+       cd $REGRESS/certus_hardware.$host_full
+
+       setenv DEMO_COMMENT "vps_regress: certus_hardware - $host"
+
+       echo "vps_regress: certus_hardware "
+
+       setenv WRT_DISABLE_NO_CLOCK_WARNING 1
+
+       echo "################# $DEMO_COMMENT #################"
+
+       echo `date`
+
+       if (-e "run_tests_redrun.SUM") then
+
+          set regress_run_not_pass="-run_not_pass"
+
+        endif
+
+       set GLOBAL_TIMEOUT_certus_hardware="10800"
+
+       set LOCAL_TIMEOUT_certus_hardware="600"
+
+       if ($host == "profpga1") then
+
+         set host="profpga1_us"
+
+         set GLOBAL_TIMEOUT_certus_hardware="18000"
+
+         set LOCAL_TIMEOUT_certus_hardware="$GLOBAL_TIMEOUT_certus_hardware"
+
+         setenv CERTUS_PARALLEL_HW 1
+
+         set PARALLEL_certus_hardware=" "
+
+       endif
+
+      if ($host == "profpga4") then
+
+         setenv CERTUS_PARALLEL_HW 1
+
+         set GLOBAL_TIMEOUT_certus_hardware="7200"
+
+         set LOCAL_TIMEOUT_certus_hardware="$GLOBAL_TIMEOUT_certus_hardware"
+
+       endif
+
+       if ($host == "profpga12") then
+
+         setenv CERTUS_PARALLEL_HW 1
+
+         set GLOBAL_TIMEOUT_certus_hardware="10800"
+
+         set LOCAL_TIMEOUT_certus_hardware="$GLOBAL_TIMEOUT_certus_hardware"
+
+       endif
+
+      if ($host == "profpga28") then
+
+         setenv CERTUS_PARALLEL_HW 1
+
+         set GLOBAL_TIMEOUT_certus_hardware="12600"
+
+         set LOCAL_TIMEOUT_certus_hardware="$GLOBAL_TIMEOUT_certus_hardware"
+
+       endif
+
+       if ($host == "profpga32_profpga33_MC") then
+
+         setenv CERTUS_PARALLEL_HW 1
+
+         set GLOBAL_TIMEOUT_certus_hardware="7200"
+
+         set LOCAL_TIMEOUT_certus_hardware="$GLOBAL_TIMEOUT_certus_hardware"
+
+       endif
+
+       if ($host != "tfjack-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+         /u/red22/tools/bin/reserve
+
+       endif
+
+         if ($host == "tfjack-host" || $host == "hood-host") then
+
+         wrt -local_timeout 3000 -redrun -log_name redrun -orig_dir_path $orig_dir_path/certus_hardware -board_machine $host -run_opt "-wait_for_license" -dump_env_stats  -timeout $GLOBAL_TIMEOUT_certus_hardware -use_redjob wv -j 8 $regress_run_not_pass $certus_list
+
+        else if ($host == "lost-comodel") then
+
+         wrt -local_timeout 400 -redrun -log_name redrun -orig_dir_path $orig_dir_path/certus_hardware -board_machine $host -run_opt "-wait_for_license" -dump_env_stats  -timeout $GLOBAL_TIMEOUT_certus_hardware -use_redreserve $regress_run_not_pass $certus_list
+
+       else 
+
+         wrt -local_timeout $LOCAL_TIMEOUT_certus_hardware -redrun -log_name redrun -orig_dir_path $orig_dir_path/certus_hardware -timeout $GLOBAL_TIMEOUT_certus_hardware -board_machine $host -run_opt "-wait_for_license" -dump_env_stats $regress_run_not_pass $PARALLEL_certus_hardware $certus_list
+
+       endif
+
+        if ($host != "tfjack-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/release
+
+        endif
+
+        touch $REGRESS/certus_hardware.$host_full/hw_run_done
+
+        unsetenv CERTUS_PARALLEL_HW
+
+        set PARALLEL_certus_hardware=""
+
+        sleep 5
+
+   else 
+
+     set GLOBAL_TIMEOUT_certus_hardware="1"
+
+     if ($host == "profpga28") then
+
+       set GLOBAL_TIMEOUT_certus_hardware="3600"
+
+     endif
+
+     if ($host == "profpga12" || $host == "hood-host" || $host == "tfjack-host" || $host == "profpga32_profpga33_MC" || $host == "profpga1") then
+
+       set GLOBAL_TIMEOUT_certus_hardware="14400"
+
+     endif
+
+    if ($codeline != "202212x" && $codeline != "202306x") then
+
+      #sleep $GLOBAL_TIMEOUT_certus_hardware 
+
+    endif
+
+   endif
+
+
+
+     if ((-e "$REGRESS/tbx.$host_full/to_run")) then
+
+        rm -f $REGRESS/tbx.$host_full/to_run
+
+        cd $REGRESS/tbx.$host_full
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "mazama-host" && $host != "obsidian-host") then
+
+           /u/red22/tools/bin/perl $script_loc/disable_failing_tests_in_nightly.pl $host_full comp tbx  $codeline
+
+        endif
+
+        setenv DEMO_COMMENT "vps_regress: tbx - $codeline $host"
+
+	setenv WRT_DISABLE_NO_CLOCK_WARNING 1
+
+        echo "################# $DEMO_COMMENT #################"
+
+        echo `date`
+
+        set GLOBAL_TIMEOUT_tbx="7200"
+
+        set regress_list="-list tests.list.$host"
+
+        if ($host == "redlab01") then
+
+          set GLOBAL_TIMEOUT_tbx="15300"
+
+          set regress_list=""
+
+        endif
+
+        if ($host == "redlab09" || $host == "redlab10" ) then
+
+	  set regress_list=""
+
+	  set GLOBAL_TIMEOUT_tbx="23400"
+
+          set exclude_list="-exclude unit_tests/xrtl_clked_oobc_new  -exclude unit_tests/xrtl_oneway_oobc -exclude unit_tests/clock_generation -exclude unit_tests/dpi_communication -exclude unit_tests/TBX_Clock_control -exclude unit_tests/StratoOS -exclude unit_tests/new_starto_features -exclude unit_tests/general_xrtl -exclude unit_tests/TBX_Clock_Prediction -exclude unit_tests/RED_PARAM_MEM -exclude unit_tests/runtime_force_release -exclude unit_tests/inactive_edge_opt"
+
+	endif
+
+        if ($host == "profpga29") then
+
+          set GLOBAL_TIMEOUT_tbx="10800"
+
+          set regress_list=""
+
+          set tbx_tag="-tag -single_fpga"
+
+        endif
+
+        if ($host == "profpga25") then
+
+          set GLOBAL_TIMEOUT_tbx="12600"
+
+          set regress_list=""
+
+          set tbx_tag="-tag single_fpga"
+
+        endif
+
+        if ($host == "profpga12") then
+
+          set tbx_tag="-tag -single_fpga"
+
+          set exclude_list="-exclude unit_tests/xrtl_clked_oobc_new  -exclude unit_tests/xrtl_oneway_oobc -exclude unit_tests/clock_generation -exclude unit_tests/dpi_communication -exclude unit_tests/TBX_Clock_control -exclude unit_tests/StratoOS -exclude unit_tests/new_starto_features -exclude unit_tests/general_xrtl -exclude unit_tests/TBX_Clock_Prediction -exclude unit_tests/RED_PARAM_MEM -exclude ./unit_tests/global_force -exclude ./unit_tests/inactive_edge_opt -exclude ./unit_tests/MDR"
+
+        endif
+
+
+
+
+
+        # handle redlab05 in branch
+
+        #if ($regress_type == "weekly" && $codeline != "main" ) then  
+
+        #  set GLOBAL_TIMEOUT_tbx="14400"
+
+        #  set regress_list=""
+
+        #endif
+
+        if ($host == "profpga14" || $host == "profpga12") then
+
+          set regress_list=""
+
+          set GLOBAL_TIMEOUT_tbx="8100"
+
+        endif
+
+        if ($host == "profpga15" || $host == "profpga16" || $host == "profpga4") then
+
+          set regress_list="-list tests.list.$host"
+
+          set GLOBAL_TIMEOUT_tbx="7200"
+
+        endif
+
+        if ($host == "profpga5" || $host == "profpga6") then
+
+          set GLOBAL_TIMEOUT_tbx="900"
+
+          set regress_list="-list tests.list.$host"
+
+        endif
+
+        if ($host == "profpga7") then
+
+          set GLOBAL_TIMEOUT_tbx="900"
+
+          set regress_list="-list tests.list.profpga6"
+
+        endif
+
+       if ($host == "profpga6") then
+
+          set GLOBAL_TIMEOUT_tbx="5400"
+
+       endif
+
+        if ($host == "rhyolite-host") then
+
+          set GLOBAL_TIMEOUT_tbx="14400"
+
+        endif
+
+
+
+        if ($host == "luna-host" || $host == "obsidian-host" || $host == "caramel-host" || $host == "hood-host" || $host == "mazama-host" || $host == "tfjack-host") then
+
+          set GLOBAL_TIMEOUT_tbx="3600"
+
+          set regress_list=""
+
+        endif
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/reserve
+
+        endif
+
+        if ($host == "luna-host" || $host == "obsidian-host" || $host == "caramel-host" || $host == "hood-host" || $host == "mazama-host") then
+
+          $script_loc/clean_b10.pl
+
+        endif
+
+        echo "$host_machine" > machine_list_file
+
+        if (-e "/home/redeng/NIGHTLY_BUILD_1_BRANCH_ONLY") then
+
+          set GLOBAL_TIMEOUT_tbx = `expr $GLOBAL_TIMEOUT_tbx \* 2`
+
+        endif
+
+        if ($host == "caramel-host") then
+
+          cd /sj/b10scratch/vps_regress_fremont/$codeline/$unit_regress_leaf/tbx.caramel-host/
+
+          echo "$host_machine" > machine_list_file
+
+          scp $unit_regress_base/$codeline/$unit_regress_leaf/tbx.caramel-host/wrt.results.tgz .
+
+          if (-e "wrt.results.tgz") then
+
+            gtar xfz wrt.results.tgz
+
+	    if ($codeline == "202012x") then
+
+              set ENABLE_REDJOB="-local_timeout 300 -redrun -use_redsched"
+
+	    else
+
+	      setenv REDJOB_USE_HOST_ONLY 1
+
+              set ENABLE_REDJOB="-local_timeout 2000 -redrun -use_redjob fremont  -j 20"
+
+            endif
+
+            wrt $ENABLE_REDJOB -log_name redrun -orig_dir_path $orig_dir_path/tbx -timeout $GLOBAL_TIMEOUT_tbx -board_machine $host -tag -black10 -run_opt "-wait_for_license" -dump_env_stats $regress_machine_list
+
+            rsync -e ssh --stats -alogtr --port=8730 . redbuild02.wv.mentorg.com:$unit_regress_base/$codeline/$unit_regress_leaf/tbx.caramel-host --exclude=results --exclude=wrt.results.tgz --exclude=outputs --exclude=redcomp.out &
+
+          else
+
+            echo "File /sj/b10scratch/vps_regress_fremont/$codeline/$unit_regress_leaf/tbx.caramel-host/wrt.results.tgz not found"
+
+          endif
+
+        else if ($host == "luna-host") then
+
+          setenv REGRESS_MODE 1
+
+          wrt -local_timeout 300 -redrun -tag black10 -log_name redrun -orig_dir_path $orig_dir_path/tbx -timeout $GLOBAL_TIMEOUT_tbx -board_machine $host -run_opt "$pcie_usage -wait_for_license" -dump_env_stats $regress_machine_list
+
+        else if ($host == "mazama-host") then
+
+          setenv REGRESS_MODE 1
+
+          wrt -local_timeout 300 -redrun -list tbx.vu19p_tests.list -log_name redrun -orig_dir_path $orig_dir_path/tbx -timeout $GLOBAL_TIMEOUT_tbx -board_machine $host -run_opt "$pcie_usage -wait_for_license" -dump_env_stats $regress_machine_list
+
+
+
+        else if ($host == "rhyolite-host") then
+
+          setenv REDJOB_USE_HOST_ONLY 1
+
+          set ENABLE_REDJOB="-local_timeout 2000 -redrun -use_redjob wv_rhyolite  -j 8"
+
+          wrt $ENABLE_REDJOB -redrun -log_name redrun -orig_dir_path $orig_dir_path/tbx -timeout $GLOBAL_TIMEOUT_tbx -board_machine $host -run_opt "$pcie_usage -wait_for_license" -dump_env_stats $regress_machine_list
+
+
+
+        else if ($host == "profpga5" || $host == "profpga6" || $host == "profpga7" || $host == "profpga14" ||$host == "profpga12" || $host == "profpga15" || $host == "profpga16" || $host == "profpga29") then
+
+          wrt -local_timeout $LOCAL_TIMEOUT -redrun -log_name redrun -orig_dir_path $orig_dir_path/tbx -timeout $GLOBAL_TIMEOUT_tbx -board_machine $host -run_opt "$pcie_usage -wait_for_license" $regress_list -dump_env_stats $regress_machine_list -reference_run ../../../regress.yesterday/regress/tbx.$host $exclude_list $tbx_tag
+
+        else if ($host == "profpga32_profpga33_MC") then
+
+          set regress_list="-list tests.list.$host" 
+
+          wrt -local_timeout $LOCAL_TIMEOUT -redrun -log_name redrun -orig_dir_path $orig_dir_path/tbx/multi_cluster -timeout $GLOBAL_TIMEOUT_tbx -board_machine $host -run_opt "$pcie_usage -wait_for_license" $regress_list -dump_env_stats $regress_machine_list -reference_run ../../../regress.yesterday/regress/tbx.$host
+
+        else if ($host == "lost-comodel") then
+
+          wrt -local_timeout $LOCAL_TIMEOUT -redrun -use_redreserve -log_name redrun -orig_dir_path $orig_dir_path/tbx -timeout $GLOBAL_TIMEOUT_tbx -board_machine $host -run_opt "-skip_board_reservation -wait_for_license" -dump_env_stats $regress_machine_list -reference_run ../../../regress.yesterday/regress/tbx.$host $certus_list
+
+        else
+
+          wrt -local_timeout 300 -redrun -log_name redrun -orig_dir_path $orig_dir_path/tbx -timeout $GLOBAL_TIMEOUT_tbx -board_machine $host -run_opt "$pcie_usage -wait_for_license" $regress_list -dump_env_stats $regress_machine_list $exclude_list $tbx_tag 
+
+        endif
+
+	echo "before release"
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/release
+
+        endif
+
+	echo "after release"
+
+        touch $REGRESS/tbx.$host_full/hw_run_done
+
+        sleep 5
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "mazama-host" && $host != "obsidian-host") then
+
+           /u/red22/tools/bin/perl $script_loc/disable_failing_tests_in_nightly.pl $host_full runtime tbx  $codeline
+
+        endif    
+
+        $script_loc/../find_bad_cl/get_new_failures.pl Runtime_Nightly $RED_CODELINE "" tbx.$host
+
+        if ($host_full == "redlab09" && -e "$REGRESS/tbx.profpga9/run_tests_redrun.SUM") then
+
+          cat $REGRESS/tbx.profpga9/run_tests_redrun.SUM >> run_tests_redrun.SUM
+
+        endif
+
+      endif
+
+    endif
+
+    echo "before redrun part"
+
+    if (-e "$REGRESS/redrun.$host_full/to_run") then
+
+      rm -f $REGRESS/redrun.$host_full/to_run
+
+      echo "redrun/to_run file removed "
+
+      if ($host != "caramel-host" && $host != "hood-host" && $host != "mazama-host" && $host != "obsidian-host") then
+
+           /u/red22/tools/bin/perl $script_loc/disable_failing_tests_in_nightly.pl $host_full comp redrun  $codeline
+
+        endif
+
+      cd $REGRESS/redrun.$host_full
+
+      if ($host == "profpga14" ||$host == "profpga32_profpga33_MC" || $host == "profpga17_profpga18_MC" ||$host == "profpga12" ||$host == "profpga13" || $host == "luna-host" || $host == "obsidian-host" || $host == "caramel-host" || $host == "hood-host" || $host == "mazama-host" || $host == "tfjack-host" || $host == "profpga15" || $host == "profpga16" || $host == "lost-comodel") then
+
+          if ($host == "caramel-host") then #Use same test cases as luna-host
+
+            wrt -redrun -n  -board_machine luna-host > tests.list.$host
+
+          else if ($host == "profpga14") then #will run RPM & SM in IP 
+
+            wrt -redrun -n  -board_machine profpga14 -exclude RED_PARAM_MEM -exclude softmodel -exclude S10_P2 -exclude quartus  -exclude user_interface -exclude user_interrupt > tests.list.$host
+
+          else if ($host != "profpga13" && $host != "profpga15" && $host != "profpga16" && $host != "profpga4") then
+
+            wrt -redrun -n  -board_machine $host > tests.list.$host
+
+          endif
+
+         set GLOBAL_TIMEOUT="5400"
+
+	 if ($regress_type == "weekly") then
+
+           set GLOBAL_TIMEOUT="18000"
+
+         endif
+
+         if ($host == "luna-host" || $host == "obsidian-host" || $host == "caramel-host" || $host == "hood-host" || $host == "mazama-host" || $host == "tfjack-host") then
+
+           set GLOBAL_TIMEOUT="7200"
+
+           set regress_type_tag=""
+
+         endif
+
+      endif
+
+      if ($host == "profpga3" ) then
+
+          rm -rf tests.list.$host
+
+        endif
+
+
+
+        #if ($host == "redlab05") then
+
+        # wrt -redrun -n  -board_machine $host  > tests.list.$host
+
+        # set GLOBAL_TIMEOUT="7200"
+
+	#   if ($regress_type == "weekly") then
+
+        #     set GLOBAL_TIMEOUT="18000"
+
+        #   endif
+
+        #endif
+
+        if ($host == "profpga14" ||$host == "profpga12" || $host == "profpga5" || $host == "profpga6" || $host == "profpga7") then
+
+          set GLOBAL_TIMEOUT="12600"
+
+          set regress_type_tag=""
+
+        endif
+
+        if ($host == "profpga15" || $host == "profpga16") then
+
+          set GLOBAL_TIMEOUT="9000"
+
+        endif
+
+        if ($host == "profpga12" ) then
+
+          set GLOBAL_TIMEOUT="8100"
+
+        endif
+
+        if ($host == "profpga29" ) then
+
+          set GLOBAL_TIMEOUT="7200"
+
+        endif
+
+        if ($host == "profpga14") then
+
+          set GLOBAL_TIMEOUT="15300"
+
+        endif
+
+        if ($host == "profpga7") then
+
+	  cp tests.list.profpga6 tests.list.profpga7
+
+        endif
+
+        if ($host == "profpga13" || $host == "profpga4") then
+
+          set GLOBAL_TIMEOUT="9000"
+
+        endif
+
+        if ($host == "profpga3" ) then
+
+          set GLOBAL_TIMEOUT="1800"
+
+          set redrun_log_name="redrun_wv"
+
+        endif
+
+        if ($host == "redlab02") then
+
+          setenv WRT_RUN_ANALYSIS 1
+
+        endif
+
+         if ($host == "redlab09" || $host == "redlab10" ) then
+
+	  set GLOBAL_TIMEOUT="1800"
+
+          cp tests.list.redlab09 tests.list.redlab10
+
+         endif
+
+        if ($host == "redlab01") then
+
+           set redrun_log_name="redrun_wv"
+
+          set GLOBAL_TIMEOUT="900"
+
+        endif
+
+        setenv DEMO_COMMENT "vps_regress: redrun - $codeline $host"
+
+        echo "################# $DEMO_COMMENT #################"
+
+        echo `date`
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/reserve
+
+        endif
+
+        if ($host == "luna-host" || $host == "obsidian-host" || $host == "caramel-host" || $host == "hood-host" || $host == "mazama-host") then
+
+          $script_loc/clean_b10.pl
+
+	  set redrun_log_name="redrun"
+
+        endif
+
+        echo "$host_machine" > machine_list_file
+
+        if ($host == "hood-host") then
+
+          echo $host > machine_list_file
+
+        endif
+
+        if (-e "/home/redeng/NIGHTLY_BUILD_1_BRANCH_ONLY") then
+
+          set GLOBAL_TIMEOUT = `expr $GLOBAL_TIMEOUT \* 2`
+
+         endif
+
+        if ($host == "obsidian-host") then
+
+          wrt -local_timeout 300 -redrun -log_name $redrun_log_name -orig_dir_path $orig_dir_path/redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -tag -no_$host$regress_type_tag,-multi_chassis -run_opt "-wait_for_license" -dump_env_stats $regress_machine_list
+
+        else if ($host == "caramel-host") then
+
+          cd /sj/b10scratch/vps_regress_fremont/$codeline/$unit_regress_leaf/redrun.caramel-host/
+
+          echo "$host_machine" > machine_list_file
+
+          scp $unit_regress_base/$codeline/$unit_regress_leaf/redrun.caramel-host/wrt.results.tgz .
+
+          scp $unit_regress_base/$codeline/$unit_regress_leaf/redrun.$host/tests.list.$host .
+
+          if (-e "wrt.results.tgz") then
+
+            gtar xfz wrt.results.tgz
+
+            if ($codeline == "202012x") then
+
+              set ENABLE_REDJOB="-local_timeout 300 -redrun -use_redsched"
+
+            else
+
+              setenv REDJOB_USE_HOST_ONLY 1
+
+              set ENABLE_REDJOB="-local_timeout 2000 -redrun -use_redjob fremont  -j 20"
+
+            endif
+
+            wrt $ENABLE_REDJOB -log_name redrun -orig_dir_path $orig_dir_path/redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -tag -black10 -run_opt "-wait_for_license" -dump_env_stats $regress_machine_list
+
+            rsync -e ssh --stats -alogtr --port=8730 . redbuild02.wv.mentorg.com:$unit_regress_base/$codeline/$unit_regress_leaf/redrun.caramel-host --exclude=results --exclude=wrt.results.tgz --exclude=outputs --exclude=redcomp.out &
+
+          else
+
+            echo "File /sj/b10scratch/vps_regress_fremont/$codeline/$unit_regress_leaf/redrun.caramel-host/wrt.results.tgz not found"
+
+          endif
+
+        else if ($host == "luna-host") then
+
+          setenv REGRESS_MODE 1
+
+          wrt -local_timeout 300 -redrun -log_name $redrun_log_name -orig_dir_path $orig_dir_path/redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -tag -no_$host$regress_type_tag,-multi_chassis,black10 -run_opt "$pcie_usage -wait_for_license" -list tests.list.$host -dump_env_stats $regress_machine_list
+
+        else if ($host == "mazama-host") then
+
+          setenv REGRESS_MODE 1
+
+          wrt -local_timeout 300 -redrun -log_name $redrun_log_name -orig_dir_path $orig_dir_path/redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -run_opt "$pcie_usage -wait_for_license"  -dump_env_stats $regress_machine_list
+
+        else if ($host == "tfjack-host") then
+
+          setenv REDJOB_USE_HOST_ONLY 1
+
+          set ENABLE_REDJOB="-local_timeout 1800 -redrun -use_redjob wv  -j 20"
+
+          wrt  $ENABLE_REDJOB -redrun -log_name $redrun_log_name -orig_dir_path $orig_dir_path/redrun -timeout 20000 -board_machine $host -run_opt "$pcie_usage -wait_for_license"  -dump_env_stats $regress_machine_list -exclude RED_PARAM_MEM -exclude softmodel -exclude user_interface -exclude user_interrupt -exclude virtual_uart -exclude SVA -exclude fcov -exclude upf -exclude RED_PARAM_DSP -exclude RED_PARAM_CAM -exclude certus -exclude runtime_force_release
+
+          #clean host between runs 
+
+          /u/redeng/scripts/regress/clean_b10.pl 
+
+          #### clean reservation after regression run
+
+          /u/redeng/scripts/reserve_primo.sh -b tfjack-host -m clean_after_regress -c "VPS nightly regression"
+
+        else if ($host == "profpga5" || $host == "profpga6" || $host == "profpga7" || $host == "profpga14" ||$host == "profpga12" ||$host == "profpga13" || $host == "profpga15" || $host == "profpga16") then
+
+          wrt -local_timeout 300 -redrun -log_name $redrun_log_name -orig_dir_path $orig_dir_path/redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -tag -no_$host$regress_type_tag -run_opt "$pcie_usage -wait_for_license" -list tests.list.$host -dump_env_stats $regress_machine_list -reference_run ../../../regress.yesterday/regress/redrun.$host
+
+        else if ($host == "profpga32_profpga33_MC" || $host == "profpga17_profpga18_MC" ) then
+
+          wrt -local_timeout 300 -redrun -log_name $redrun_log_name -orig_dir_path $orig_dir_path/redrun/multi_cluster -timeout $GLOBAL_TIMEOUT -board_machine $host -tag -no_$host$regress_type_tag -run_opt "$pcie_usage -wait_for_license" -list tests.list.profpga32_profpga33_MC -dump_env_stats $regress_machine_list -reference_run ../../../regress.yesterday/regress/redrun.$host
+
+        else if ($host == "lost-comodel" ) then
+
+          wrt -local_timeout 300 -redrun -use_redreserve -log_name $redrun_log_name -orig_dir_path $orig_dir_path/redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -tag -no_$host$regress_type_tag -run_opt "-skip_board_reservation -wait_for_license" $certus_list -dump_env_stats $regress_machine_list -reference_run ../../../regress.yesterday/regress/redrun.$host
+
+        else
+
+          wrt -local_timeout 300 -redrun -log_name $redrun_log_name -orig_dir_path $orig_dir_path/redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -tag -no_$host$regress_type_tag -run_opt "$pcie_usage -wait_for_license" -list tests.list.$host -dump_env_stats $regress_machine_list
+
+        endif
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/release
+
+        endif
+
+        touch $REGRESS/redrun.$host_full/hw_run_done
+
+        sleep 5
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "mazama-host" && $host != "obsidian-host") then
+
+           /u/red22/tools/bin/perl $script_loc/disable_failing_tests_in_nightly.pl $host_full runtime redrun  $codeline
+
+        endif
+
+        foreach wv_test (`cat tests.list.$host`)
+
+          if ($host == "redlab01" || $host == "profpga3") then
+
+             cp $wv_test/run_tests_$redrun_log_name.log $wv_test/run_tests_redrun.log
+
+          endif
+
+        end
+
+        $script_loc/../find_bad_cl/get_new_failures.pl Runtime_Nightly $RED_CODELINE "" redrun.$host
+
+    endif
+
+    if (-e "$REGRESS/IP.$host_full/to_run") then
+
+      rm -f $REGRESS/IP.$host_full/to_run
+
+      echo "IP/to_run file removed "
+
+      cd $REGRESS/IP.$host_full
+
+      set GLOBAL_TIMEOUT="14400"
+
+      set redrun_log_name="redrun"
+
+        setenv DEMO_COMMENT "vps_regress: IP - $codeline $host"
+
+        echo "################# $DEMO_COMMENT #################"
+
+        echo `date`
+
+        set ENABLE_REDJOB=""
+
+        if ($host == "brokentop-host" || $host == "washington-host") then
+
+           setenv LD_LIBRARY_PATH /home/aismail/libxcb/:$LD_LIBRARY_PATH
+
+	   set ENABLE_REDJOB="-local_timeout 1800 -redrun -use_redjob wv  -j 20"
+
+        endif
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/reserve
+
+        endif
+
+        if (-e "/home/redeng/NIGHTLY_BUILD_1_BRANCH_ONLY") then
+
+          set GLOBAL_TIMEOUT = `expr $GLOBAL_TIMEOUT \* 2`
+
+         endif
+
+          wrt -local_timeout 300 -redrun -log_name $redrun_log_name -orig_dir_path $orig_dir_path/redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -run_opt "$pcie_usage -wait_for_license" $ENABLE_REDJOB
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/release
+
+        endif
+
+        touch $REGRESS/IP.$host_full/hw_run_done
+
+        sleep 5
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "mazama-host" && $host != "obsidian-host") then
+
+           /u/red22/tools/bin/perl $script_loc/disable_failing_tests_in_nightly.pl $host_full runtime IP  $codeline
+
+        endif
+
+        $script_loc/../find_bad_cl/get_new_failures.pl Runtime_Nightly $RED_CODELINE "" IP.$host
+
+    endif
+
+    echo "multi_chassis part" 
+
+    if ($host == "luna-host" && $codeline == "DUMMY" ) then
+
+      set count = 0
+
+      while ((! -e "$REGRESS/redrun.obsidian-host/hw_run_done") || ($count != "1440"))
+
+        sleep 5
+
+        set count = `expr $count + 1`
+
+      end
+
+      if ((-e $REGRESS/redrun.obsidian-host/hw_run_done) && (-e $REGRESS/redrun.luna-host/hw_run_done)) then
+
+        rm -f $REGRESS/redrun.obsidian-host/hw_run_done $REGRESS/redrun.luna-host/hw_run_done
+
+        cd $REGRESS/redrun.$host_full
+
+        set GLOBAL_TIMEOUT="1000"
+
+        set redrun_log_name="multi_chassis"
+
+        wrt -n -redrun -tag multi_chassis > tests.list.multi_chassis
+
+        setenv DEMO_COMMENT "vps_regress: multi_chassis - $codeline $host"
+
+        echo "################# $DEMO_COMMENT #################"
+
+        echo `date`
+
+        if ($host == "caramel-host") then
+
+          /u/red22/tools/bin/reserve
+
+        endif
+
+        wrt -local_timeout 300 -redrun -log_name $redrun_log_name -orig_dir_path $orig_dir_path/redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -tag -no_$host$regress_type_tag -run_opt "$pcie_usage -wait_for_license" -list tests.list.multi_chassis -dump_env_stats
+
+        if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/release
+
+        endif
+
+        sleep 5
+
+        #$script_loc/../find_bad_cl/get_new_failures.pl Runtime_Nightly $RED_CODELINE "" redrun.$host_full #disabled till being needed, then it will be easy to locate where to enable by uncomment this line
+
+      endif
+
+    endif
+
+    if (-e "$REGRESS/tbx.hpfe.$host/to_run") then
+
+          rm -f $REGRESS/tbx.hpfe.$host/to_run
+
+          cd $REGRESS/tbx.hpfe.$host
+
+          set GLOBAL_TIMEOUT_tbx="3600"
+
+          setenv DEMO_COMMENT "vps_regress: tbx HPFE - $codeline $host"
+
+          echo "################# $DEMO_COMMENT #################"
+
+          echo `date`
+
+           if ($host == "tfjack-host") then
+
+             echo "wallowa-comodel" > machine_list_file
+
+             set regress_machine_list="-machinelist machine_list_file -ssh"
+
+             $REGRESS/scripts/b10eptest_hpfe_ntb.csh > b10eptest_output.log
+
+           endif
+
+	  if ($host == "newberry-host") then
+
+            setenv COMODEL_HOST -
+
+          endif
+
+	  if ($host == "hood-host") then
+
+             $REGRESS/scripts/b10eptest_hpfe_ntb.csh > b10eptest_output.log
+
+            /usr/local/hpfe/comodel/hpfe.sh -r 147.34.169.246
+
+          endif
+
+          wrt -local_timeout 300 -redrun -log_name redrun -orig_dir_path ../tbx/unit_tests -timeout $GLOBAL_TIMEOUT_tbx -board_machine $host -run_opt "$pcie_usage -wait_for_license" $regress_type_list -dump_env_stats $regress_machine_list
+
+          #$script_loc/../find_bad_cl/get_new_failures.pl Runtime_Nightly $RED_CODELINE "" tbx.hpfe.$host #disabled till being needed, then it will be easy to locate where to enable by uncomment this line
+
+            touch $REGRESS/hw_run_done
+
+            sleep 5
+
+        endif
+
+    if (-e "$REGRESS/redrun.ntb.$host/to_run") then
+
+      rm -f $REGRESS/redrun.ntb.$host/to_run
+
+      cd $REGRESS/redrun.ntb.$host
+
+      set GLOBAL_TIMEOUT="3600"
+
+      set redrun_log_name="redrun"
+
+      echo "$host_machine" > machine_list_file
+
+      setenv DEMO_COMMENT "vps_regress: redrun NTB - $codeline $host"
+
+      echo "################# $DEMO_COMMENT #################"
+
+      echo `date`
+
+      if ($host == "tfjack-host") then 
+
+        echo "wallowa-comodel" > machine_list_file
+
+        wrt -local_timeout 300 -redrun -log_name $redrun_log_name -orig_dir_path ../redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -tag -no_$host -run_opt " -wait_for_license" -dump_env_stats -machinelist machine_list_file -ssh -use_results $REGRESS/redrun.tfjack-host/
+
+      else
+
+        wrt -local_timeout 300 -redrun -log_name $redrun_log_name -orig_dir_path ../redrun -timeout $GLOBAL_TIMEOUT -board_machine $host -tag -no_$host -run_opt " -wait_for_license" -dump_env_stats -machinelist machine_list_file -ssh -use_results $REGRESS/redrun.luna-host/
+
+      endif
+
+        touch $REGRESS/hw_run_done
+
+        #$script_loc/../find_bad_cl/get_new_failures.pl Runtime_Nightly $RED_CODELINE "" redrun.ntb.$host #disabled till being needed, then it will be easy to locate where to enable by uncomment this line
+
+        sleep 5
+
+    endif
+
+
+
+      if ((-e "$REGRESS/redrun.$host_full.windows/to_run")) then
+
+        rm $REGRESS/redrun.$host_full.windows/to_run
+
+        cd $REGRESS/redrun.$host_full.windows
+
+        setenv DEMO_COMMENT "vps_regress: redrun windows - $codeline $host"
+
+        echo "vps_regress: redrun windows - $codeline"
+
+	setenv WRT_DISABLE_NO_CLOCK_WARNING 1
+
+        echo "################# $DEMO_COMMENT #################"
+
+        echo `date`
+
+        if ($host != "tfjack-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+          /u/red22/tools/bin/reserve
+
+        endif
+
+        wrt -local_timeout 600 -redrun -log_name redrun_copy -timeout 7200 -list tests.list.$host_full.windows -board_machine $host -run_opt "-compile_copy_only"
+
+        wrt -local_timeout 1000 -redrun -log_name redrun -orig_dir_path $orig_dir_path/redrun -timeout 10800 -win_grid -tcp -list tests.list.$host_full.windows -board_machine $host -run_opt "-wait_for_license -skip_compile_copy -end_checkpoint verify" -grid_opt "-tc 1"
+
+        wrt -local_timeout 300 -tag offline -log_name redrun -orig_dir_path $orig_dir_path/redrun -timeout 3600 -list tests.list.$host_full.windows -board_machine $host -run_opt "-wait_for_license -skip_compile_copy -start_checkpoint verify" $regress_run_not_pass
+
+        #rename last SUM log to preserve it before merging with windows run SUM 
+
+        mv run_tests_redrun.SUM run_tests_redrun_linux.SUM
+
+        #preserve windows run SUM copy
+
+        cp run_tests_redrun.SUM.temp run_tests_redrun.SUM
+
+        #merge both SUM logs 
+
+        (echo ""; cat run_tests_redrun_linux.SUM) >> run_tests_redrun.SUM
+
+        
+
+        if ($host != "tfjack-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+           /u/red22/tools/bin/release
+
+         endif
+
+         touch $REGRESS/redrun.$host_full.windows/hw_run_done
+
+         sleep 5
+
+      endif
+
+
+
+
+
+
+
+   if ($profpga != "") then
+
+        /u/red22/tools/bin/reserve
+
+      /home/redeng/scripts/egc/cleanBrdLog $profpga
+
+      /u/red22/tools/bin/release
+
+    endif
+
+    echo "end of the loop" 
+
+end
+
+# in fpga_vip regression use redlab01 for main and redlab02 for the other branch
+
+if ($host == "redlab01") then
+
+  set CODELINES = (main)
+
+else if ($host == "redlab02") then 
+
+  set CODELINES = (main 201912x.eval 202006x)
+
+else if ($host == "redlab09") then 
+
+  set CODELINES = (main 201912x.eval 202006x)
+
+#else if ($host == "redlab05") then 
+
+#  set CODELINES = (main 201906x)
+
+endif
+
+
+
+if ($host == "caramel-host") then
+
+  echo "killing full chassis reservation"
+
+  setenv RED_CODELINE main
+
+  unsetenv RED_HOME
+
+  unset echo; source /u/red22/setup/setup.red22.csh ; set echo
+
+  setenv REDRESERVE_HOST cas-redsched-vm:56024
+
+  redreserve -status -columns chassis,fpga,res | grep "$host.*FULL" | awk '{print $3}' | xargs redreserve -kill
+
+  unsetenv REDRESERVE_HOST
+
+endif
+
+
+
+echo "the end of the script" 
+
+# Do final release in case job wasn't released correctly
+
+if ($host != "caramel-host" && $host != "hood-host" && $host != "lost-comodel") then
+
+  /u/redeng/bin/release
+
+endif
+
+
+
+#Clean hanging jobs on B10 hosts
+
+if ($host == "caramel-host") then
+
+  ps aux | grep ^redeng | grep wrt | grep -v rsync | awk '{print $2}' | xargs kill -9
+
+  ps aux | grep ^redeng | grep redrun | grep -v rsync | awk '{print $2}' | xargs kill -9
+
+  ps aux | grep ^redeng | grep redsm | grep -v rsync | awk '{print $2}' | xargs kill -9
+
+  ps aux | grep ^redeng | grep certus | grep -v rsync | awk '{print $2}' | xargs kill -9
+
+else if ($host == "luna-host") then
+
+  ps aux | grep ^redeng | grep wrt | awk '{print $2}' | xargs kill -9
+
+  ps aux | grep ^redeng | grep redrun | awk '{print $2}' | xargs kill -9
+
+  ps aux | grep ^redeng | grep redsm | awk '{print $2}' | xargs kill -9
+
+  ps aux | grep ^redeng | grep certus | awk '{print $2}' | xargs kill -9
+
+else if ($host == "tfjack-host") then
+
+  ps aux | grep ^redeng | grep wrt | awk '{print $2}' | xargs kill -9
+
+  ps aux | grep ^redeng | grep redrun | awk '{print $2}' | xargs kill -9
+
+  ps aux | grep ^redeng | grep redsm | awk '{print $2}' | xargs kill -9
+
+  ps aux | grep ^redeng | grep certus | awk '{print $2}' | xargs kill -9
+
+#Added by Mazen Taha to clean profpga12 before certusreg job start
+
+else if ($host == "redlab12") then
+
+  ps aux | grep ^redeng | grep wrt | awk '{print $2}' | xargs kill -9
+
+  ps aux | grep ^redeng | grep redrun | awk '{print $2}' | xargs kill -9
+
+  ps aux | grep ^redeng | grep redsm | awk '{print $2}' | xargs kill -9
+
+  ps aux | grep ^redeng | grep certus | awk '{print $2}' | xargs kill -9
+
+endif
+
+
+
