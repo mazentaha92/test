@@ -1,0 +1,509 @@
+#!/bin/csh -fx
+
+set script_loc=`dirname $0`  
+set script_loc=`cd $script_loc && pwd` 
+
+setenv FIX_REDCOMP_BUG 1
+setenv RED_DISABLE_OS_CHECK 1
+setenv WRT_RUN_ANALYSIS 1
+setenv ENABLE_EXTRACT_LINES_FAIL 1
+
+if (-e "/home/redeng/NO_NIGHTLY_BUILD") then
+  echo "Skipping nightly build"
+  exit
+endif
+
+if ("$1" != "") then
+  setenv RED_CODELINE $1
+else
+  setenv RED_CODELINE "main"
+endif
+setenv RUN_MODE $2
+
+if (-e "/home/redeng/NO_NIGHTLY_BUILD.$RED_CODELINE") then
+  echo "Skipping nightly build"
+  exit
+endif
+
+if (-e "/home/redeng/NIGHTLY_BUILD_OVERLAP.$RED_CODELINE") then
+  echo "Skipping nightly build as there is overlap with older build"
+  rm /home/redeng/NIGHTLY_BUILD_OVERLAP.$RED_CODELINE
+  exit
+endif
+
+# sourcing setup scripts
+source /u/red22/setup/setup.red22.csh
+setenv CCACHE_DIR /bata/redeng/nightly_build_ccache/vps/$RED_CODELINE
+
+if ($?DATE) then
+  set date=$DATE
+else
+  set date=`date +%Y%m%d`
+endif
+set d = (`date`)
+set error=0
+set skip=0
+echo "DATE of the build : $date"
+set builds="/u/red22/builds/nightly/$RED_CODELINE"
+set build_area="$builds/$date"
+set regular_runs="/bata/redeng/bnr/regular_runs";
+set regular_runs_fremont="/sj/b10scratch/vps_regress_fremont"
+set run_area="$regular_runs/daily.regression/$RED_CODELINE/regress.latest"
+set run_area_next="$regular_runs/daily.regression/$RED_CODELINE/regress.next"
+set run_area_fremont="$regular_runs_fremont/daily.regression/$RED_CODELINE/regress.latest"
+set run_area_vip="$regular_runs/daily.regression/$RED_CODELINE/regress_vip.latest"
+set old_run_area="$regular_runs/daily.regression/$RED_CODELINE/regress.yesterday"
+set old_run_area_fremont="$regular_runs_fremont/daily.regression/$RED_CODELINE/regress.yesterday"
+set old_run_area_vip="$regular_runs/daily.regression/$RED_CODELINE/regress_vip.yesterday"
+set archive_dir="$regular_runs/daily.regression/$RED_CODELINE/regress.archive"
+set archive_dir_fremont="$regular_runs_fremont/daily.regression/$RED_CODELINE/regress.archive"
+set archive_dir_vip="$regular_runs/daily.regression/$RED_CODELINE/regress_vip.archive"
+set workspace="$regular_runs/workspace/$RED_CODELINE";
+set workspace_fremont="$regular_runs_fremont/$RED_CODELINE"
+set vip_workspace="$regular_runs/workspace/fpga_vip";
+set logs="/home/redeng/logs/$RED_CODELINE"
+
+mkdir -p $logs
+
+if (! -e "$workspace") then
+  echo "$workspace not found";
+  exit 1;
+endif
+# Build area shouldn't be there unless run is restarted
+if (-e "$build_area") then
+  echo "build area $build_area already found, removing it"
+  if (-e "$builds/build_failed") then
+    grep -v $date $builds/build_failed > $builds/build_failed.temp
+    mv $builds/build_failed.temp $builds/build_failed
+  endif
+  mv $build_area $build_area.delete
+  chmod +w -R $build_area.delete
+  rm -rf $build_area.delete &
+endif
+
+# Clean the workspace from old empty directories
+find $workspace -depth -empty -type d -exec rmdir -v {} \; > /dev/null
+
+# Sync
+mkdir -p $workspace
+cd $workspace
+p4 sync ... >& sync.log || set error=1
+set cl=`p4 cstat //dvt/red22/dev/$RED_CODELINE/...\#have | grep change | tail -n1 | cut -d " " -f 3`
+p4 changes -t -m1 //dvt/red22/...@$cl,@$cl > CHANGELIST
+p4 changes -t -m1 src/runtime/...\#have > src/runtime/CHANGELIST || set error=1
+if (-e "src/CHANGELIST") then
+  mv src/CHANGELIST src/CHANGELIST.old
+endif
+p4 changes -t -m1 src/...\#have > src/CHANGELIST || set error=1
+
+if ($error == 1) then
+  echo "P4 command failed"
+  exit 1
+endif
+diff src/CHANGELIST src/CHANGELIST.old && set skip=1
+if ($skip == 1) then
+  echo "No changes in the src, skip this build"
+  exit
+endif
+if ($RUN_MODE == "BUILD_ONLY") then
+  mv $workspace/src/CHANGELIST.old $workspace/src/CHANGELIST
+endif
+cd regress
+#/u/redeng/scripts/regress/gold_check.csh &
+set builds_running = `ls /home/redeng/NIGHTLY_BUILD_RUNNING.* | wc -l` 
+if ($builds_running >= 2) then
+  echo "2 builds already running/in queue, will not run for $RED_CODELINE"
+  mv $workspace/src/CHANGELIST.old $workspace/src/CHANGELIST
+  exit
+endif
+set hours = `expr $builds_running \* 14400`
+echo `date` >> /home/redeng/tracking/$RED_CODELINE.$date.log
+echo "$builds_running builds are running, will sleep for $hours secs" >> /home/redeng/tracking/$RED_CODELINE.$date.log
+echo "$builds_running builds are running, will sleep for $hours secs"
+touch /home/redeng/NIGHTLY_BUILD_RUNNING.$RED_CODELINE 
+if ($RUN_MODE != "BUILD_ONLY") then
+sleep $hours
+if ($hours != 0) then # This means that we are running the second branch
+  /u/redeng/scripts/regress/wait_for_grid -q redqa.q -util 0.8 -timeout 14400
+  /u/redeng/scripts/regress/check_grid -q redqa.q -util 0.8
+  if ($status != 0) then
+    echo "Grid is full, not running this branch"
+    mv $workspace/src/CHANGELIST.old $workspace/src/CHANGELIST
+    exit
+  endif
+endif
+endif
+if ($error == 1) then
+  echo "P4 command failed"
+  exit 1
+endif
+
+# Add the Unique message ID
+cd $workspace/src
+if ($RED_CODELINE == "main") then
+  p4 revert ...
+  /u/redeng/scripts/add_msg_id.pl
+  p4 revert -a ...
+  p4 submit -d "Add unique message ID" ...
+  p4 revert ...
+endif
+
+# Update mgc.pkginfo
+cd $workspace/src
+if ($RED_CODELINE == "main") then
+  p4 revert ...
+  rm mgc.pkginfo
+  p4 edit common/license/mgls/mgc.pkginfo
+  p4 edit common/license/mgls-win/mgc.pkginfo
+  wget https://bilbop1.wv.mentorg.com:8443/pkginfo/lsunix/mgc.pkginfo --no-check-certificate
+  mv mgc.pkginfo common/license/mgls/mgc.pkginfo 
+  wget https://bilbop1.wv.mentorg.com:8443/pkginfo/lspc/mgc.pkginfo --no-check-certificate
+  mv mgc.pkginfo common/license/mgls-win/mgc.pkginfo
+  p4 revert -a ...
+  p4 submit -d "Update mgc.pkginfo" ...
+  p4 revert ...
+endif
+
+# Build the package
+echo `date` >> /home/redeng/tracking/$RED_CODELINE.$date.log
+echo "Clean old build" >> /home/redeng/tracking/$RED_CODELINE.$date.log
+make clean -j DEST_DIR=$build_area
+
+# some paths are just dropped, check and wait if they are missing
+$script_loc/refresh_paths.csh
+
+echo `date` >> /home/redeng/tracking/$RED_CODELINE.$date.log
+echo "VPS Build starting" >> /home/redeng/tracking/$RED_CODELINE.$date.log
+if ($RUN_MODE != "BUILD_ONLY") then
+  touch /bata/redeng/bnr/regular_runs/nightly_build_running.$RED_CODELINE
+  $script_loc/sync_nightly_regress.csh >& $logs/nightly_regress.sync.$RED_CODELINE.$date.log &
+endif
+/home/redeng/scripts/redbuildsub make package ignore_tests noassert -j 8 DEST_DIR=$build_area J=8 EXTRA_VIS_VERSION=nightly EXTRA_VIS_PATH=/bata/rhino/buildsites/2022.x/builds/linux_x86_64/questasim || set error=1
+if ($error == 1) then
+  echo "Red build failed"
+  echo "$date" >> $builds/build_failed
+  rm /bata/redeng/bnr/regular_runs/nightly_build_running.$RED_CODELINE
+  rm /home/redeng/NIGHTLY_BUILD_RUNNING.$RED_CODELINE
+  exit 1
+endif
+set package=`cat $build_area/package_name`
+set runtime_package=`cat $build_area/package_name | sed -e "s#vps_#vps_runtime_#"`
+set redminirun_package=`cat $build_area/package_name | sed -e "s#vps_#vps_redminirun_#"`
+cp $workspace/CHANGELIST $build_area/$package
+cp $workspace/src/runtime/CHANGELIST $build_area/$package/runtime
+cd $build_area/$package
+#./.configure.csh || set error=1
+if ($error == 1) then
+  echo "Red configuration failed"
+  echo "$date" >> $builds/build_failed
+  rm /bata/redeng/bnr/regular_runs/nightly_build_running.$RED_CODELINE
+  rm /home/redeng/NIGHTLY_BUILD_RUNNING.$RED_CODELINE
+  exit 1
+endif
+
+echo `date` >> /home/redeng/tracking/$RED_CODELINE.$date.log
+echo "Build done" >> /home/redeng/tracking/$RED_CODELINE.$date.log
+
+cd $workspace/src
+
+/home/redeng/scripts/redbuildsub make vps_redminirun DEST_DIR=$build_area
+
+echo `date` >> /home/redeng/tracking/$RED_CODELINE.$date.log
+echo "redminirun Build done" >> /home/redeng/tracking/$RED_CODELINE.$date.log
+
+# keep the last 4 weekly builds
+cd $builds
+if ($d[1] == "Sat") then
+  echo This is a weekly build
+  echo "$date" >> $builds/weekly_builds
+  tail -n 3 $builds/weekly_builds > $builds/weekly_builds.temp
+  mv $builds/weekly_builds.temp $builds/weekly_builds
+endif
+if (-e "$builds/weekly_builds") then
+  cp $builds/weekly_builds $builds/builds_to_keep
+  foreach f (low medium high default) 
+    if (-e "/wv/vps_archive/redeng/perf/$RED_CODELINE/$f/running_date") then
+      cat /wv/vps_archive/redeng/perf/$RED_CODELINE/$f/running_date >> $builds/builds_to_keep
+    endif
+    if (-e "/bata/redeng/customer_HW/$RED_CODELINE/$f/hw_date") then
+      cat /bata/redeng/customer_HW/$RED_CODELINE/$f/hw_date >> $builds/builds_to_keep
+    endif
+  end
+  if (-e "/bata/redeng/bnr/Jenkins/perf_cl/$RED_CODELINE.long.date.prop") then
+    cat /bata/redeng/bnr/Jenkins/perf_cl/$RED_CODELINE.long.date.prop >> $builds/builds_to_keep
+  endif
+
+endif
+# Remove all previous failed builds so that we archive only passed builds
+if (-e "$builds/build_failed") then
+  foreach b (`cat $builds/build_failed`)
+    if (-e "$builds/$b") then
+      chmod +w -R $builds/$b
+      rm -rf $builds/$b
+    endif
+  end
+  rm -f $builds/build_failed
+endif
+
+# Remove old builds
+echo `date` >> /home/redeng/tracking/$RED_CODELINE.$date.log
+echo "Remove old builds started" >> /home/redeng/tracking/$RED_CODELINE.$date.log
+set to_remove_builds=`find $builds -maxdepth 1 -mindepth 1 -type d | sort | sed -n -e :a -e '1,8\\!{P;N;D;};N;ba'`
+foreach b ($to_remove_builds)
+  if (-e "$builds/builds_to_keep") then
+    grep -q $b:t $builds/builds_to_keep || (chmod +w -R $b; rm -rf $b)
+  else
+    chmod +w -R $b
+    rm -rf $b
+  endif
+end
+echo `date` >> /home/redeng/tracking/$RED_CODELINE.$date.log
+echo "Remove old builds done" >> /home/redeng/tracking/$RED_CODELINE.$date.log
+
+# Create links
+cd $builds
+if (-e "$date/$package/os3fp/bin/med_tools/.md5sum") then
+  set med_tools_version=`md5sum $date/$package/os3fp/bin/med_tools/.md5sum | awk '{print $1}'`
+  if (-d "/u/red22/med_tools/$med_tools_version") then
+     mv $date/$package/os3fp/bin/med_tools $date/$package/os3fp/bin/med_tools_delete
+     ln -sf /u/red22/med_tools/$med_tools_version $date/$package/os3fp/bin/med_tools
+     chmod a+w $date/$package/os3fp/bin/med_tools_delete -R ; rm -rf $date/$package/os3fp/bin/med_tools_delete &
+  else
+     echo "need new /u/red22/med_tools/$med_tools_version for the build $date/$package" | mail -s "Nightly build : need new common med_tools dir" mazen_taha@mentor.com
+  endif
+endif
+if (-l "red22.latest") then
+  unlink red22.yesterday
+  mv red22.latest red22.yesterday
+endif
+ln -sf $date/$package red22.latest
+if (-l "red22") then
+  unlink red22
+endif
+ln -sf $date/$package red22
+if (-l "vps.latest") then
+  unlink vps.yesterday
+  mv vps.latest vps.yesterday
+endif
+ln -sf $date/$package vps.latest
+if (-l "vps") then
+  unlink vps
+endif
+ln -sf $date/$package vps
+
+if (-l "red22_utils.latest") then
+  unlink red22_utils.yesterday
+  mv red22_utils.latest red22_utils.yesterday
+endif
+ln -sf $date/${package}_utils red22_utils.latest
+if (-l "red22_utils") then
+  unlink red22_utils
+endif
+ln -sf $date/${package}_utils red22_utils
+if (-l "vps_utils.latest") then
+  unlink vps_utils.yesterday
+  mv vps_utils.latest vps_utils.yesterday
+endif
+ln -sf $date/${package}_utils vps_utils.latest
+if (-l "vps_runtime.latest") then
+  unlink vps_runtime.yesterday
+  mv vps_runtime.latest vps_runtime.yesterday
+endif
+ln -sf $date/$runtime_package vps_runtime.latest
+if (-l "vps_redminirun.latest") then
+  unlink vps_redminirun.yesterday
+  mv vps_redminirun.latest vps_redminirun.yesterday
+endif
+ln -sf $date/$redminirun_package vps_redminirun.latest
+if (-l "vps_utils") then
+  unlink vps_utils
+endif
+ln -sf $date/${package}_utils vps_utils
+wait
+if ($RUN_MODE != "BUILD_ONLY") then
+# install runtime-only release early (in bg) to be used for Cairo regress 
+if (-e "${build_area}/$package/bin/install_runtime_release") then
+  rm -rf /tmp/tmp.$$
+  echo > /tmp/tmp.$$
+  echo ${build_area}/$package >> /tmp/tmp.$$
+  echo ${build_area}/$runtime_package >> /tmp/tmp.$$
+  ln -sf ${build_area}/$runtime_package ${build_area}/vps_runtime_link
+  ${build_area}/$package/bin/install_runtime_release < /tmp/tmp.$$ && cp $workspace/CHANGELIST ${build_area}/$runtime_package/CHANGELIST && rm -rf /tmp/tmp.$$ &
+endif
+
+# prepare regress for run
+cd $regular_runs/daily.regression/$RED_CODELINE/
+if (-e "$old_run_area") then
+  mv $old_run_area $old_run_area.delete
+  if (-e "$old_run_area.delete/date_of_run") then
+    set date_of_delete_run=`cat $old_run_area.delete/date_of_run`
+    rm $old_run_area.delete
+    (rsync --delete -azh /s/redeng/empty/ $date_of_delete_run; chmod 777 -R $date_of_delete_run; rm -rf $date_of_delete_run) &
+  endif
+endif
+
+if (-e "$run_area") then
+     mv $run_area $old_run_area
+  if (-e "$old_run_area/date_of_run") then
+    set date_of_last_run=`cat $old_run_area/date_of_run`
+    echo `date` >> /home/redeng/tracking/$RED_CODELINE.$date.log
+    echo "date of old run : $date_of_last_run, it will point to yesterday link" >> /home/redeng/tracking/$RED_CODELINE.$date.log
+    if ( -e "$archive_dir/$date_of_last_run") then
+      rm -rf $archive_dir/$date_of_last_run
+    endif
+    ln -sf `pwd`/$date_of_last_run $archive_dir/$date_of_last_run
+    echo `date` >> /home/redeng/tracking/$RED_CODELINE.$date.log
+    echo "date of this run : $date_of_last_run " >> /home/redeng/tracking/$RED_CODELINE.$date.log
+  endif
+endif
+
+if (-e "$run_area_next") then
+  rm $run_area_next
+  ln -sf $date regress.latest
+endif
+cd -
+cp $workspace/CHANGELIST $run_area/regress
+cp $build_area/$package/versions $run_area/regress
+echo $date > $run_area/regress/running_date
+endif
+
+set cl=`cat $workspace/CHANGELIST | cut -do -f1 | sed -e 's/Change //' -e 's/ //'`
+echo "changelist=$cl" > /bata/redeng/bnr/Jenkins/perf_cl/$RED_CODELINE.low.changelist.prop
+echo "changelist=$cl" > /bata/redeng/bnr/Jenkins/perf_cl/$RED_CODELINE.medium.changelist.prop
+echo "changelist=$cl" > /bata/redeng/bnr/Jenkins/perf_cl/$RED_CODELINE.high.changelist.prop
+echo "changelist=$cl" > /bata/redeng/bnr/Jenkins/perf_cl/$RED_CODELINE.default.changelist.prop
+echo "$date" > /bata/redeng/bnr/Jenkins/perf_cl/$RED_CODELINE.low.date.prop
+echo "$date" > /bata/redeng/bnr/Jenkins/perf_cl/$RED_CODELINE.medium.date.prop
+echo "$date" > /bata/redeng/bnr/Jenkins/perf_cl/$RED_CODELINE.high.date.prop
+echo "$date" > /bata/redeng/bnr/Jenkins/perf_cl/$RED_CODELINE.default.date.prop
+if ($RUN_MODE != "BUILD_ONLY") then
+# Regression run setup
+setenv EXAMPLE_FULL_RUN 1
+
+# Set RED_HOME
+setenv RED_HOME $build_area/$package
+setenv RED_UTILS_HOME $build_area/${package}_utils
+setenv PATH $RED_UTILS_HOME/bin:$PATH
+setenv PATH $RED_HOME/bin:$PATH
+
+# Generate WRT info about covered tasks/ips in Nightly 
+setenv WRT_CATEGORIZE_INFO 1
+
+cd $run_area/regress
+mkdir $run_area/regress/tmp
+setenv WRT_TMP_DIR $run_area/regress/tmp
+rm -rf $WRT_TMP_DIR/*
+#check how many builds are running
+set builds_running = `ls /home/redeng/NIGHTLY_BUILD_RUNNING.* | wc -l` 
+setenv delay_1 60m
+setenv delay_2 90m
+setenv delay_3 120m
+setenv delay_4 180m
+setenv delay_5 240m
+if ($builds_running < 2) then
+  setenv delay_1 120m
+  setenv delay_2 210m
+  setenv delay_3 300m
+  setenv delay_4 420m
+  setenv delay_5 480m
+  touch /home/redeng/NIGHTLY_BUILD_1_BRANCH_ONLY
+endif
+$script_loc/regress/run_regress.pl $script_loc/regress/$RED_CODELINE.lst >& $logs/nightly_regress.$RED_CODELINE.$date.log &
+
+endif
+if (-e "$run_area/date_of_run") then
+  set date_of_last_run=`cat $run_area/date_of_run`
+  echo `date` >> /home/redeng/tracking/$RED_CODELINE.$date.log
+  echo "date of latest run : $date_of_last_run, it will point to latest link" >> /home/redeng/tracking/$RED_CODELINE.$date.log
+  ln -sf $run_area $archive_dir/$date_of_last_run 
+endif
+  
+if (-e "$old_run_area/date_of_run") then
+  set date_of_last_run=`cat $old_run_area/date_of_run`
+  if ( -e "$archive_dir/$date_of_last_run") then
+    rm -rf $archive_dir/$date_of_last_run
+  endif
+  echo `date` >> /home/redeng/tracking/$RED_CODELINE.$date.log
+  echo "date of old run : $date_of_last_run, it will kake a new dir to it" >> /home/redeng/tracking/$RED_CODELINE.$date.log
+  mkdir -p $archive_dir/$date_of_last_run/regress
+  cp -r $old_run_area/regress/runtime_check $archive_dir/$date_of_last_run/regress
+  (cd $old_run_area; find -name wrt.results.tgz -or -name "run_tests*" -or -name "diff.*" -or -type f -name "run" -or -name "CHANGELIST" -or -name "timing_summary.rpt" -or -name "memory_summary.rpt" -or -name "logs" -or -name "LOGS" -or -name "weekly" -or -name "fail_reason" -or -name "spnr_skipped" -or -name "velcomp_skipped" -or -name "vsim_skipped" -or -name "redrt.out.tgz" -or -name "wrt_run_command.log.*" -or -name "velrun.log" -or -name "velsyn.lg" -or -name "rtlc.log" -or -name "analyze.log" -or -name "reddiag_summary.rpt" -or -name "wrt_reddiag.rpt" -or -name "*_timing_summary.rpt_extracted.log" -or -name "certus_warnings*rpt" | tar -chf - -T - | ( cd $archive_dir/$date_of_last_run ; tar xhf - )) 
+  rm -f $archive_dir/$date_of_last_run/regress/redverify.emulate.*/wrt.results.tgz
+  # Delete big files from archives (> 1 MB)
+  find $archive_dir/$date_of_last_run/regress -type f -size +1M | grep -v wrt.results.tgz | grep -v run_tests | xargs rm -f
+endif 
+
+wait
+endif
+rm -f /bata/redeng/bnr/regular_runs/nightly_build_running.$RED_CODELINE
+
+cd /u/red22/builds/nightly/$RED_CODELINE
+if (-e "$date/$runtime_package/os3fp/bin/med_tools/.md5sum") then
+  set med_tools_version=`md5sum $date/$runtime_package/os3fp/bin/med_tools/.md5sum | awk '{print $1}'`
+  if (-d "/u/red22/med_tools/$med_tools_version") then
+     mv $date/$runtime_package/os3fp/bin/med_tools $date/$runtime_package/os3fp/bin/med_tools_delete
+     ln -sf /u/red22/med_tools/$med_tools_version $date/$runtime_package/os3fp/bin/med_tools
+     chmod a+w $date/$runtime_package/os3fp/bin/med_tools_delete -R ; rm -rf $date/$runtime_package/os3fp/bin/med_tools_delete &
+  else
+     echo "need new /u/red22/med_tools/$med_tools_version for the build $date/$runtime_package" | mail -s "Nightly build : need new common med_tools dir" mazen_taha@mentor.com
+  endif
+endif
+
+if ($RUN_MODE != "BUILD_ONLY") then
+
+# Clean old comments
+/u/red22/tools/bin/perl $script_loc/regress/clean_comments.pl Unit_Nightly $RED_CODELINE
+
+# Send emails to owners for failures
+if ($RED_CODELINE == "main") then
+/u/red22/tools/bin/perl $script_loc/regress/send_violations_email.pl Unit_Nightly main
+/u/red22/tools/bin/perl $script_loc/regress/send_empty_md5sum_email.pl Unit_Nightly main 
+/u/red22/tools/bin/perl $script_loc/regress/send_not_skip_spnr.pl Unit_Nightly main 
+endif
+/u/red22/tools/bin/perl $script_loc/regress/send_fails_email.pl Unit_Nightly $RED_CODELINE
+/u/red22/tools/bin/perl $script_loc/regress/send_fails_email.pl Platform_Simulation_Nightly $RED_CODELINE
+/u/red22/tools/bin/perl $script_loc/regress/send_fails_email.pl Platform_Simulation_compilation $RED_CODELINE
+/u/red22/tools/bin/perl $script_loc/regress/send_fails_email.pl Platforms_Compilation $RED_CODELINE
+/u/red22/tools/bin/perl /u/red22/tools/bin/perl $script_loc/regress/send_fails_email.pl Platforms_Runtime $RED_CODELINE
+/u/red22/tools/bin/perl $script_loc/regress/send_N2U_email.pl Unit_Nightly $RED_CODELINE
+/u/red22/tools/bin/perl $script_loc/regress/send_huge_files_email.pl Unit_Nightly $RED_CODELINE
+/u/red22/tools/bin/perl $script_loc/regress/send_crashes_email.pl Unit_Nightly $RED_CODELINE 
+/u/red22/tools/bin/perl $script_loc/find_bad_cl/get_new_failures.pl Unit_Nightly $RED_CODELINE
+endif
+rm /home/redeng/NIGHTLY_BUILD_RUNNING.$RED_CODELINE
+if ($RUN_MODE != "BUILD_ONLY") then
+# Delete old archives
+set to_remove_dirs=`find $archive_dir/ -maxdepth 1 -mindepth 1 -type d | sort | sed -n -e :a -e '1,15\\!{P;N;D;};N;ba'`
+foreach b ($to_remove_dirs)
+  if ( ! -e "$b/cleaned") then
+    rm -rf $archive_dir/tmp
+    mkdir $archive_dir/tmp
+    (cd $b; find -mindepth 2 -maxdepth 4 -type f -name "run_tests*SUM" -or -name "CHANGELIST" | tar -cf - -T - | ( cd $archive_dir/tmp; tar xf - ))
+    mv $b/regress/runtime_check $archive_dir/regress/tmp/
+    chmod +w -R $b
+    rm -rf $b
+    mv $archive_dir/tmp $b
+    touch $b/cleaned
+  endif
+end
+if (-e "$archive_dir/$date_of_last_run") then
+  echo `date` >> /home/redeng/tracking/$RED_CODELINE.$date.log
+  echo "date of old run : $date_of_last_run, it will create links to IP dirs in archive" >> /home/redeng/tracking/$RED_CODELINE.$date.log
+  echo "debug message 1 "
+  ln -sf $archive_dir/$date_of_last_run/regress/redrun.profpga3/RED_PARAM_MEM $archive_dir/$date_of_last_run/regress/IP.profpga3/ || set error=1
+  echo "debug message 2 "
+  ln -sf $archive_dir/$date_of_last_run/regress/redrun.profpga3/softmodel $archive_dir/$date_of_last_run/regress/IP.profpga3/ || set error=1
+  echo "debug message 7 "
+  ln -sf $archive_dir/$date_of_last_run/regress/redrun.tfjack-host/RED_PARAM_MEM $archive_dir/$date_of_last_run/regress/IP.brokentop-host/ || set error=1
+  echo "debug message 8 "
+  ln -sf $archive_dir/$date_of_last_run/regress/redrun.tfjack-host/softmodel $archive_dir/$date_of_last_run/regress/IP.brokentop-host/ || set error=1
+  echo "debug message 9 "
+  ln -sf $archive_dir/$date_of_last_run/regress/redrun.tfjack-host/user_interface $archive_dir/$date_of_last_run/regress/IP.washington-host/ || set error=1
+  echo "debug message 10 "
+  ln -sf $archive_dir/$date_of_last_run/regress/redrun.tfjack-host/user_interrupt $archive_dir/$date_of_last_run/regress/IP.washington-host/ || set error=1
+  echo "debug message 11 "
+  ln -sf $archive_dir/$date_of_last_run/regress/redrun.tfjack-host/virtual_uart $archive_dir/$date_of_last_run/regress/IP.washington-host/ || set error=1
+  echo "debug message 12 "
+  ln -sf $archive_dir/$date_of_last_run/regress/tbx.profpga9/unit_tests $archive_dir/$date_of_last_run/regress/tbx.redlab09/ || set error=1
+endif 
+endif
